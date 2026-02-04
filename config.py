@@ -87,19 +87,20 @@ class Config:
 
     # Recent files management
 
+    def _get_path_from_entry(self, entry) -> str:
+        """Get path from a recent file/template entry (handles both str and dict)."""
+        return entry if isinstance(entry, str) else entry.get('path', '')
+
     def add_recent_file(self, file_path: str) -> None:
         """Add a file to recent files list."""
         abs_path = os.path.abspath(file_path)
         recent_files = self._config.get('recent_files', [])
 
-        # Remove if already exists
-        recent_files = [rf for rf in recent_files if rf.get('path') != abs_path]
+        # Remove if already exists (handle both string and dict entries)
+        recent_files = [rf for rf in recent_files if self._get_path_from_entry(rf) != abs_path]
 
-        # Add to front
-        recent_files.insert(0, {
-            'path': abs_path,
-            'last_opened': time.time()
-        })
+        # Add to front (as string path for simplicity)
+        recent_files.insert(0, abs_path)
 
         # Trim to max
         max_files = self._config.get('max_recent_files', 20)
@@ -111,7 +112,7 @@ class Config:
         abs_path = os.path.abspath(file_path)
         recent_files = self._config.get('recent_files', [])
         self._config['recent_files'] = [
-            rf for rf in recent_files if rf.get('path') != abs_path
+            rf for rf in recent_files if self._get_path_from_entry(rf) != abs_path
         ]
         self.save()
 
@@ -126,17 +127,13 @@ class Config:
         abs_path = os.path.abspath(file_path)
         templates = self._config.get('templates', [])
 
-        # Check if already exists
+        # Check if already exists (handle both string and dict entries)
         for t in templates:
-            if t.get('path') == abs_path:
+            if self._get_path_from_entry(t) == abs_path:
                 return
 
-        template_name = name or os.path.basename(file_path)
-        templates.append({
-            'path': abs_path,
-            'name': template_name,
-            'added': time.time()
-        })
+        # Add as string path for simplicity
+        templates.append(abs_path)
 
         self._config['templates'] = templates
         self.save()
@@ -146,7 +143,7 @@ class Config:
         abs_path = os.path.abspath(file_path)
         templates = self._config.get('templates', [])
         self._config['templates'] = [
-            t for t in templates if t.get('path') != abs_path
+            t for t in templates if self._get_path_from_entry(t) != abs_path
         ]
         self.save()
 

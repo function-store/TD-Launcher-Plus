@@ -83,9 +83,12 @@ def show_native_file_picker(prompt: str = "Select TouchDesigner File") -> Option
 def find_project_icon(project_path: str) -> Optional[str]:
     """Find an icon for a project file.
 
-    Looks for:
-    1. icon.jpg or icon.png in the same directory
-    2. If not found, the most recently modified .jpg or .png file
+    Looks for (in order):
+    1. icon.png/jpg/jpeg in the same directory
+    2. icon_temp.png/jpg/jpeg in the same directory
+    3. <projectname>.png/jpg/jpeg (same base name as project file)
+    4. <projectname_without_version>.png/jpg/jpeg (for files like project.7.toe)
+    5. Returns None (caller should use default app icon)
 
     Returns the path to the icon file, or None if not found.
     """
@@ -93,30 +96,51 @@ def find_project_icon(project_path: str) -> Optional[str]:
         return None
 
     project_dir = os.path.dirname(project_path)
+    if not project_dir:
+        project_dir = '.'
 
-    # First, look for icon.jpg or icon.png
-    for icon_name in ['icon.png', 'icon.jpg', 'icon.jpeg']:
-        icon_path = os.path.join(project_dir, icon_name)
+    # Get project base name (remove .toe extension)
+    project_filename = os.path.basename(project_path)
+    if project_filename.lower().endswith('.toe'):
+        project_base = project_filename[:-4]
+    else:
+        project_base = os.path.splitext(project_filename)[0]
+
+    # Also get base name without version number (e.g., "project.7" -> "project")
+    # Check if the last part after a dot is a number
+    project_base_no_version = project_base
+    if '.' in project_base:
+        parts = project_base.rsplit('.', 1)
+        if parts[1].isdigit():
+            project_base_no_version = parts[0]
+
+    # First, look for icon.png/jpg/jpeg
+    for ext in ['.png', '.jpg', '.jpeg']:
+        icon_path = os.path.join(project_dir, f'icon{ext}')
         if os.path.exists(icon_path):
             return icon_path
 
-    # If no icon found, look for the most recent image file
-    image_files = []
-    try:
-        for f in os.listdir(project_dir):
-            if f.lower().endswith(('.png', '.jpg', '.jpeg')):
-                full_path = os.path.join(project_dir, f)
-                mtime = os.path.getmtime(full_path)
-                image_files.append((mtime, full_path))
-    except OSError:
-        return None
+    # Second, look for icon_temp.png/jpg/jpeg
+    for ext in ['.png', '.jpg', '.jpeg']:
+        icon_path = os.path.join(project_dir, f'icon_temp{ext}')
+        if os.path.exists(icon_path):
+            return icon_path
 
-    if not image_files:
-        return None
+    # Third, look for <projectname>.png/jpg/jpeg (exact match)
+    for ext in ['.png', '.jpg', '.jpeg']:
+        icon_path = os.path.join(project_dir, f'{project_base}{ext}')
+        if os.path.exists(icon_path):
+            return icon_path
 
-    # Sort by modification time, most recent first
-    image_files.sort(reverse=True)
-    return image_files[0][1]
+    # Fourth, look for <projectname_without_version>.png/jpg/jpeg
+    if project_base_no_version != project_base:
+        for ext in ['.png', '.jpg', '.jpeg']:
+            icon_path = os.path.join(project_dir, f'{project_base_no_version}{ext}')
+            if os.path.exists(icon_path):
+                return icon_path
+
+    # Not found - caller will use default
+    return None
 
 
 def find_readme(project_path: str) -> Optional[str]:

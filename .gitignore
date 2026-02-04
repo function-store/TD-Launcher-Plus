@@ -9,3 +9,8 @@ test3.toe
 td_launcher_env
 inno
 .DS_Store
+Backup/
+*.*.toe
+icon.png
+icon_temp.png
+typings/

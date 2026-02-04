@@ -247,6 +247,16 @@ class LauncherApp:
                 with dpg.child_window(height=150, width=-1, tag="templates_list"):
                     self._build_templates_list()
 
+    def _is_versioned_toe(self, filename: str) -> bool:
+        """Check if filename has .number.toe format (e.g., project.7.toe)."""
+        if not filename.lower().endswith('.toe'):
+            return False
+        base = filename[:-4]  # Remove .toe
+        if '.' in base:
+            parts = base.rsplit('.', 1)
+            return parts[1].isdigit()
+        return False
+
     def _build_recent_files_list(self):
         """Build the recent files list."""
         if dpg.does_item_exist("recent_files_list"):
@@ -263,11 +273,41 @@ class LauncherApp:
             )
             return
 
-        for i, rf in enumerate(recent_files):
-            file_path = rf.get('path', '')
+        display_index = 0
+        shown_paths = set()  # Track paths we've already displayed
+
+        for rf in recent_files:
+            # Handle both string paths and dict entries
+            file_path = rf if isinstance(rf, str) else rf.get('path', '')
+            file_path = file_path.strip() if file_path else ''
             filename = os.path.basename(file_path)
+            parent_folder = os.path.basename(os.path.dirname(file_path))
+
+            # Handle versioned files (e.g., project.7.toe)
+            if self._is_versioned_toe(filename):
+                if parent_folder.lower() == 'backup':
+                    # Show Backup files with prefix
+                    display_name = f"Backup/{filename}"
+                else:
+                    # Convert to non-versioned path (project.7.toe -> project.toe)
+                    base = filename[:-4]  # Remove .toe
+                    base_no_version = base.rsplit('.', 1)[0]
+                    non_versioned_filename = f"{base_no_version}.toe"
+                    file_path = os.path.join(os.path.dirname(file_path), non_versioned_filename)
+                    filename = non_versioned_filename
+                    display_name = filename
+            else:
+                display_name = filename
+
+            # Skip if we've already shown this path
+            if file_path in shown_paths:
+                continue
+            shown_paths.add(file_path)
+
             exists = os.path.exists(file_path)
             modified = format_file_modified_time(file_path) if exists else ""
+            i = display_index
+            display_index += 1
 
             with dpg.group(horizontal=True, parent="recent_files_list"):
                 # Icon
@@ -284,7 +324,7 @@ class LauncherApp:
 
                 # Filename (selectable)
                 dpg.add_selectable(
-                    label=filename,
+                    label=display_name,
                     tag=f"recent_file_{i}",
                     callback=self._on_file_selected,
                     user_data={'path': file_path, 'type': 'recent'},
@@ -338,8 +378,9 @@ class LauncherApp:
             return
 
         for i, t in enumerate(templates):
-            file_path = t.get('path', '')
-            name = t.get('name', os.path.basename(file_path))
+            # Handle both string paths and dict entries
+            file_path = t if isinstance(t, str) else t.get('path', '')
+            name = os.path.basename(file_path) if isinstance(t, str) else t.get('name', os.path.basename(file_path))
             exists = os.path.exists(file_path)
             modified = format_file_modified_time(file_path) if exists else ""
 
@@ -907,8 +948,8 @@ class LauncherApp:
         """Confirm and remove a file from a list."""
         if not list_type:
             # Determine list type
-            recent_paths = [rf.get('path') for rf in self.config.get_recent_files()]
-            template_paths = [t.get('path') for t in self.config.get_templates()]
+            recent_paths = [rf if isinstance(rf, str) else rf.get('path') for rf in self.config.get_recent_files()]
+            template_paths = [t if isinstance(t, str) else t.get('path') for t in self.config.get_templates()]
             abs_path = os.path.abspath(file_path)
 
             if abs_path in recent_paths:
