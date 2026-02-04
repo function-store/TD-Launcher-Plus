@@ -12,6 +12,12 @@ import glob
 import logging
 import json
 from typing import Dict, Any, List, Optional
+try:
+    from PIL import Image
+    import numpy as np
+    PIL_AVAILABLE = True
+except ImportError:
+    PIL_AVAILABLE = False
 
 # Platform-specific file dialog imports
 if platform.system() == 'Windows':
@@ -74,6 +80,9 @@ last_click_time = 0  # For double-click detection
 last_clicked_path = None  # For double-click detection
 last_click_id = None  # Combination of path+time to detect true duplicates
 picker_selection_index = 0  # Current selection index in file picker lists
+show_icons = False  # Toggle for showing project icons
+icon_textures = {}  # Cache for loaded icon textures
+default_icon_texture = None  # Default icon texture for files without project icons
 
 # ============================================================================
 # Config Module - Persistent storage for recent files and templates
@@ -85,6 +94,7 @@ DEFAULT_CONFIG = {
     'templates': [],  # List of dicts: [{'path': str, 'name': str, 'added': timestamp}, ...]
     'max_recent_files': 20,
     'confirm_remove_from_list': True,  # Show confirmation when removing files from lists
+    'show_icons': False,  # Show project icons in file lists
 }
 
 def get_config_dir() -> str:
@@ -1030,6 +1040,148 @@ def format_file_modified_time(file_path: str) -> str:
     except (OSError, ValueError):
         return ""
 
+def find_project_icon(project_path: str) -> Optional[str]:
+    """Find an icon for a project file.
+    
+    Looks for:
+    1. icon.jpg or icon.png in the same directory
+    2. If not found, the most recently modified .jpg or .png file
+    
+    Returns the path to the icon file, or None if not found.
+    """
+    if not os.path.exists(project_path):
+        return None
+    
+    project_dir = os.path.dirname(project_path)
+    
+    # First, look for icon.jpg or icon.png
+    for icon_name in ['icon.jpg', 'icon.png', 'Icon.jpg', 'Icon.png', 'ICON.jpg', 'ICON.png']:
+        icon_path = os.path.join(project_dir, icon_name)
+        if os.path.exists(icon_path):
+            return icon_path
+    
+    # If no icon file, find the latest .jpg or .png file
+    image_files = []
+    for ext in ['*.jpg', '*.jpeg', '*.png', '*.JPG', '*.JPEG', '*.PNG']:
+        image_files.extend(glob.glob(os.path.join(project_dir, ext)))
+    
+    if not image_files:
+        return None
+    
+    # Sort by modification time (newest first)
+    image_files.sort(key=lambda f: os.path.getmtime(f), reverse=True)
+    return image_files[0]
+
+def load_icon_texture(icon_path: str, size: int = 50) -> Optional[str]:
+    """Load an image and create a DearPyGui texture for it.
+    
+    Returns the texture tag, or None if loading failed.
+    """
+    global icon_textures
+    
+    if not PIL_AVAILABLE:
+        return None
+    
+    # Check if already loaded
+    if icon_path in icon_textures:
+        return icon_textures[icon_path]
+    
+    try:
+        # Load and process the image
+        img = Image.open(icon_path)
+        
+        # Convert to RGB if necessary (handle RGBA, grayscale, etc.)
+        if img.mode != 'RGBA':
+            img = img.convert('RGBA')
+        
+        # Center crop to square
+        width, height = img.size
+        min_dim = min(width, height)
+        left = (width - min_dim) // 2
+        top = (height - min_dim) // 2
+        right = left + min_dim
+        bottom = top + min_dim
+        img = img.crop((left, top, right, bottom))
+        
+        # Resize to target size
+        img = img.resize((size, size), Image.Resampling.LANCZOS)
+        
+        # Convert to numpy array and normalize to 0-1 range
+        img_array = np.array(img).astype(np.float32) / 255.0
+        
+        # Flatten the array for DearPyGui
+        img_flat = img_array.flatten().tolist()
+        
+        # Create unique texture tag
+        texture_tag = f"icon_texture_{len(icon_textures)}"
+        
+        # Create the texture in DearPyGui
+        with dpg.texture_registry():
+            dpg.add_static_texture(
+                width=size,
+                height=size,
+                default_value=img_flat,
+                tag=texture_tag
+            )
+        
+        icon_textures[icon_path] = texture_tag
+        return texture_tag
+        
+    except Exception as e:
+        logger.debug(f"Failed to load icon {icon_path}: {e}")
+        return None
+
+def load_default_icon(size: int = 50) -> Optional[str]:
+    """Load the application icon as the default icon for files without project icons.
+    
+    Returns the texture tag, or None if loading failed.
+    """
+    global default_icon_texture
+    
+    if not PIL_AVAILABLE:
+        return None
+    
+    # Return cached texture if already loaded
+    if default_icon_texture is not None:
+        return default_icon_texture
+    
+    # Try to find the app icon
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    
+    # Look for icon files in priority order
+    icon_candidates = [
+        os.path.join(script_dir, 'td_launcher.ico'),
+        os.path.join(script_dir, 'td_launcher.icns'),
+        os.path.join(script_dir, 'td_launcher.png'),
+    ]
+    
+    for icon_path in icon_candidates:
+        if os.path.exists(icon_path):
+            texture_tag = load_icon_texture(icon_path, size=size)
+            if texture_tag:
+                default_icon_texture = texture_tag
+                return texture_tag
+    
+    return None
+
+def on_toggle_icons(sender, app_data):
+    """Callback when the show icons checkbox is toggled."""
+    global show_icons, app_config
+    
+    show_icons = app_data
+    app_config['show_icons'] = show_icons
+    save_config(app_config)
+    
+    # Sync both checkboxes
+    if dpg.does_item_exist("show_icons_checkbox"):
+        dpg.set_value("show_icons_checkbox", show_icons)
+    if dpg.does_item_exist("show_icons_checkbox_templates"):
+        dpg.set_value("show_icons_checkbox_templates", show_icons)
+    
+    # Rebuild the file lists to show/hide icons
+    build_recent_files_list()
+    build_templates_list()
+
 def on_file_selected(sender, app_data, user_data):
     """Callback when a file is selected from recent files or templates."""
     global selected_file_path, last_click_time, last_clicked_path, last_click_id, countdown_enabled
@@ -1192,33 +1344,55 @@ def build_recent_files_list():
         modified = format_file_modified_time(file_path) if exists else ""
 
         with dpg.group(horizontal=True, parent="recent_files_list"):
-            dpg.add_selectable(
-                label=filename,
-                tag=f"recent_file_{i}",
-                callback=on_file_selected,
-                user_data={'path': file_path, 'type': 'recent'},
-                width=200
-            )
-            dpg.add_text(
-                f"  {modified}",
-                color=[100, 150, 100, 255] if exists else [100, 50, 50, 255]
-            )
-            dpg.add_text(
-                f"  {directory}",
-                color=[150, 150, 150, 255] if exists else [100, 50, 50, 255]
-            )
+            # Show icon if enabled
+            if show_icons and PIL_AVAILABLE:
+                texture_tag = None
+                if exists:
+                    icon_path = find_project_icon(file_path)
+                    if icon_path:
+                        texture_tag = load_icon_texture(icon_path, size=50)
+                
+                # Use default icon if no project icon found
+                if texture_tag is None:
+                    texture_tag = load_default_icon(size=50)
+                
+                if texture_tag:
+                    dpg.add_image(texture_tag, width=50, height=50)
+            
+            # Wrap text elements in a vertical group for centering
+            with dpg.group():
+                # Add some vertical spacing to center text with icon
+                if show_icons and PIL_AVAILABLE:
+                    dpg.add_spacer(height=15)
+                
+                with dpg.group(horizontal=True):
+                    dpg.add_selectable(
+                        label=filename,
+                        tag=f"recent_file_{i}",
+                        callback=on_file_selected,
+                        user_data={'path': file_path, 'type': 'recent'},
+                        width=200
+                    )
+                    dpg.add_text(
+                        f"  {modified}",
+                        color=[100, 150, 100, 255] if exists else [100, 50, 50, 255]
+                    )
+                    dpg.add_text(
+                        f"  {directory}",
+                        color=[150, 150, 150, 255] if exists else [100, 50, 50, 255]
+                    )
 
-            if not exists:
-                dpg.add_text(" (missing)", color=[255, 50, 0, 255])
+                    if not exists:
+                        dpg.add_text(" (missing)", color=[255, 50, 0, 255])
 
-            # Remove button (on the right)
-            dpg.add_button(
-                label="X",
-                tag=f"remove_recent_{i}",
-                callback=on_remove_recent_file,
-                user_data=file_path,
-                small=True
-            )
+                    # Remove button (on the right)
+                    dpg.add_button(
+                        label="X",
+                        tag=f"remove_recent_{i}",
+                        callback=on_remove_recent_file,
+                        user_data=file_path,
+                        small=True
+                    )
 
 def build_templates_list():
     """Populate the templates list."""
@@ -1244,27 +1418,49 @@ def build_templates_list():
         modified = format_file_modified_time(file_path) if exists else ""
 
         with dpg.group(horizontal=True, parent="templates_list"):
-            dpg.add_selectable(
-                label=name,
-                tag=f"template_{i}",
-                callback=on_file_selected,
-                user_data={'path': file_path, 'type': 'template'},
-                width=220
-            )
-            dpg.add_text(f"  {modified}", color=[100, 150, 100, 255])
-            dpg.add_text(f"  {file_path}", color=[150, 150, 150, 255])
+            # Show icon if enabled
+            if show_icons and PIL_AVAILABLE:
+                texture_tag = None
+                if exists:
+                    icon_path = find_project_icon(file_path)
+                    if icon_path:
+                        texture_tag = load_icon_texture(icon_path, size=50)
+                
+                # Use default icon if no project icon found
+                if texture_tag is None:
+                    texture_tag = load_default_icon(size=50)
+                
+                if texture_tag:
+                    dpg.add_image(texture_tag, width=50, height=50)
+            
+            # Wrap text elements in a vertical group for centering
+            with dpg.group():
+                # Add some vertical spacing to center text with icon
+                if show_icons and PIL_AVAILABLE:
+                    dpg.add_spacer(height=15)
+                
+                with dpg.group(horizontal=True):
+                    dpg.add_selectable(
+                        label=name,
+                        tag=f"template_{i}",
+                        callback=on_file_selected,
+                        user_data={'path': file_path, 'type': 'template'},
+                        width=220
+                    )
+                    dpg.add_text(f"  {modified}", color=[100, 150, 100, 255])
+                    dpg.add_text(f"  {file_path}", color=[150, 150, 150, 255])
 
-            if not exists:
-                dpg.add_text(" (missing)", color=[255, 50, 0, 255])
+                    if not exists:
+                        dpg.add_text(" (missing)", color=[255, 50, 0, 255])
 
-            # Remove button on the right
-            dpg.add_button(
-                label="X",
-                tag=f"remove_template_{i}",
-                callback=on_remove_template,
-                user_data=file_path,
-                small=True
-            )
+                    # Remove button on the right
+                    dpg.add_button(
+                        label="X",
+                        tag=f"remove_template_{i}",
+                        callback=on_remove_template,
+                        user_data=file_path,
+                        small=True
+                    )
 
 def update_version_panel():
     """Update the version panel when a file is selected."""
@@ -1387,8 +1583,9 @@ def update_version_panel():
 
 def build_unified_ui():
     """Build the unified file picker + version picker UI."""
-    global app_config, seconds_started
+    global app_config, seconds_started, show_icons
     app_config = load_config()
+    show_icons = app_config.get('show_icons', False)
 
     with dpg.window(tag="Primary Window"):
         dpg.add_text(f'TD Launcher {app_version}', color=[50, 255, 0, 255])
@@ -1407,6 +1604,12 @@ def build_unified_ui():
                         tag="browse_btn_recent",
                         callback=browse_and_open_file
                     )
+                    dpg.add_checkbox(
+                        label="Show Icons",
+                        tag="show_icons_checkbox",
+                        default_value=show_icons,
+                        callback=on_toggle_icons
+                    )
                 with dpg.child_window(height=150, width=-1, tag="recent_files_list"):
                     build_recent_files_list()
 
@@ -1418,6 +1621,12 @@ def build_unified_ui():
                         label="Add Template...",
                         callback=show_add_template_dialog,
                         tag="add_template_btn"
+                    )
+                    dpg.add_checkbox(
+                        label="Show Icons",
+                        tag="show_icons_checkbox_templates",
+                        default_value=show_icons,
+                        callback=on_toggle_icons
                     )
 
                 with dpg.child_window(height=150, width=-1, tag="templates_list"):
