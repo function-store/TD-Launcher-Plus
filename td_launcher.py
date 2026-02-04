@@ -1182,6 +1182,71 @@ def on_toggle_icons(sender, app_data):
     build_recent_files_list()
     build_templates_list()
 
+def on_row_clicked(sender, app_data, user_data):
+    """Handle clicks on non-selectable row items (icons, text)."""
+    # Debug what we received
+    print(f"[ROW DEBUG] Handler triggered! app_data={app_data}")
+    
+    # app_data appears to be (mouse_button, item_id) based on logs (0, 38)
+    # But let's be robust and try to find the item ID/Tag
+    
+    clicked_tag = None
+    
+    # Check both values in app_data tuple
+    for val in app_data:
+        # If it's a string, it might be an alias
+        if isinstance(val, str):
+            clicked_tag = val
+            break
+        # If it's an int, check if it maps to an alias we recognize
+        elif isinstance(val, int):
+            alias = dpg.get_item_alias(val)
+            if alias and ("recent_" in alias or "template_" in alias):
+                clicked_tag = alias
+                break
+    
+    if not clicked_tag:
+        print(f"[ROW DEBUG] Could not determine clicked tag from {app_data}")
+        return
+        
+    print(f"[ROW DEBUG] Identified clicked tag: {clicked_tag}")
+    
+    try:
+        if "recent_" in clicked_tag:
+            list_type = "recent"
+            # Extract index from tags like "recent_icon_5", "recent_mod_5"
+            idx = int(clicked_tag.split("_")[-1])
+            items = app_config.get('recent_files', [])
+        elif "template_" in clicked_tag:
+            list_type = "template"
+            idx = int(clicked_tag.split("_")[-1])
+            items = app_config.get('templates', [])
+        else:
+            return
+
+        if 0 <= idx < len(items):
+            item = items[idx]
+            file_path = item.get('path', '')
+            
+            # Switch to correct tab if needed (though we should be on it)
+            if list_type == "recent":
+                if dpg.get_value("file_picker_tabs") != dpg.get_alias_id("recent_files_tab"):
+                    dpg.set_value("file_picker_tabs", dpg.get_alias_id("recent_files_tab"))
+            else:
+                 if dpg.get_value("file_picker_tabs") != dpg.get_alias_id("templates_tab"):
+                    dpg.set_value("file_picker_tabs", dpg.get_alias_id("templates_tab"))
+
+            # Update selection index
+            global picker_selection_index
+            picker_selection_index = idx
+            update_picker_selection() # Creates visual highlight on the selectable
+            
+            # Iterate logic
+            on_file_selected(sender, app_data, {'path': file_path, 'type': list_type})
+            
+    except (ValueError, IndexError, AttributeError) as e:
+        logger.debug(f"Row click error: {e}")
+
 def on_file_selected(sender, app_data, user_data):
     """Callback when a file is selected from recent files or templates."""
     global selected_file_path, last_click_time, last_clicked_path, last_click_id, countdown_enabled
@@ -1215,6 +1280,20 @@ def on_file_selected(sender, app_data, user_data):
         update_version_panel()
         # Disable countdown in picker mode to prevent auto-launch
         countdown_enabled = False
+        
+        # Update shared selection index to match clicked item
+        # This ensures visual state (highlight) is exclusive and correct
+        try:
+            items = get_current_list_items()
+            for i, item in enumerate(items):
+                if item.get('path') == file_path:
+                    global picker_selection_index
+                    picker_selection_index = i
+                    update_picker_selection()
+                    break
+        except Exception:
+            pass
+            
     else:
         selected_file_path = None
         update_version_panel()
@@ -1357,7 +1436,8 @@ def build_recent_files_list():
                     texture_tag = load_default_icon(size=50)
                 
                 if texture_tag:
-                    dpg.add_image(texture_tag, width=50, height=50)
+                    dpg.add_image(texture_tag, width=50, height=50, tag=f"recent_icon_{i}")
+                    dpg.bind_item_handler_registry(f"recent_icon_{i}", "row_click_handler")
             
             # Wrap text elements in a vertical group for centering
             with dpg.group():
@@ -1375,15 +1455,21 @@ def build_recent_files_list():
                     )
                     dpg.add_text(
                         f"  {modified}",
-                        color=[100, 150, 100, 255] if exists else [100, 50, 50, 255]
+                        color=[100, 150, 100, 255] if exists else [100, 50, 50, 255],
+                        tag=f"recent_mod_{i}"
                     )
+                    dpg.bind_item_handler_registry(f"recent_mod_{i}", "row_click_handler")
+                    
                     dpg.add_text(
                         f"  {directory}",
-                        color=[150, 150, 150, 255] if exists else [100, 50, 50, 255]
+                        color=[150, 150, 150, 255] if exists else [100, 50, 50, 255],
+                        tag=f"recent_path_{i}"
                     )
+                    dpg.bind_item_handler_registry(f"recent_path_{i}", "row_click_handler")
 
                     if not exists:
-                        dpg.add_text(" (missing)", color=[255, 50, 0, 255])
+                        dpg.add_text(" (missing)", color=[255, 50, 0, 255], tag=f"recent_missing_{i}")
+                        dpg.bind_item_handler_registry(f"recent_missing_{i}", "row_click_handler")
 
                     # Remove button (on the right)
                     dpg.add_button(
@@ -1431,7 +1517,8 @@ def build_templates_list():
                     texture_tag = load_default_icon(size=50)
                 
                 if texture_tag:
-                    dpg.add_image(texture_tag, width=50, height=50)
+                    dpg.add_image(texture_tag, width=50, height=50, tag=f"template_icon_{i}")
+                    dpg.bind_item_handler_registry(f"template_icon_{i}", "row_click_handler")
             
             # Wrap text elements in a vertical group for centering
             with dpg.group():
@@ -1447,11 +1534,15 @@ def build_templates_list():
                         user_data={'path': file_path, 'type': 'template'},
                         width=220
                     )
-                    dpg.add_text(f"  {modified}", color=[100, 150, 100, 255])
-                    dpg.add_text(f"  {file_path}", color=[150, 150, 150, 255])
+                    dpg.add_text(f"  {modified}", color=[100, 150, 100, 255], tag=f"template_mod_{i}")
+                    dpg.bind_item_handler_registry(f"template_mod_{i}", "row_click_handler")
+                    
+                    dpg.add_text(f"  {file_path}", color=[150, 150, 150, 255], tag=f"template_path_{i}")
+                    dpg.bind_item_handler_registry(f"template_path_{i}", "row_click_handler")
 
                     if not exists:
-                        dpg.add_text(" (missing)", color=[255, 50, 0, 255])
+                        dpg.add_text(" (missing)", color=[255, 50, 0, 255], tag=f"template_missing_{i}")
+                        dpg.bind_item_handler_registry(f"template_missing_{i}", "row_click_handler")
 
                     # Remove button on the right
                     dpg.add_button(
@@ -1586,6 +1677,13 @@ def build_unified_ui():
     global app_config, seconds_started, show_icons
     app_config = load_config()
     show_icons = app_config.get('show_icons', False)
+
+    # Create Item Handler Registry for row clicks
+    if dpg.does_item_exist("row_click_handler"):
+        dpg.delete_item("row_click_handler")
+        
+    with dpg.item_handler_registry(tag="row_click_handler"):
+        dpg.add_item_clicked_handler(callback=on_row_clicked)
 
     with dpg.window(tag="Primary Window"):
         dpg.add_text(f'TD Launcher {app_version}', color=[50, 255, 0, 255])
