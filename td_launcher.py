@@ -83,6 +83,7 @@ picker_selection_index = 0  # Current selection index in file picker lists
 show_icons = False  # Toggle for showing project icons
 icon_textures = {}  # Cache for loaded icon textures
 default_icon_texture = None  # Default icon texture for files without project icons
+show_readme = False  # Toggle for showing README panel
 
 # ============================================================================
 # Config Module - Persistent storage for recent files and templates
@@ -95,6 +96,7 @@ DEFAULT_CONFIG = {
     'max_recent_files': 20,
     'confirm_remove_from_list': True,  # Show confirmation when removing files from lists
     'show_icons': False,  # Show project icons in file lists
+    'show_readme': False,  # Show README.md side panel
 }
 
 def get_config_dir() -> str:
@@ -1072,6 +1074,38 @@ def find_project_icon(project_path: str) -> Optional[str]:
     image_files.sort(key=lambda f: os.path.getmtime(f), reverse=True)
     return image_files[0]
 
+def find_readme(project_path: str) -> Optional[str]:
+    """Find a README file for a project."""
+    if not os.path.exists(project_path):
+        return None
+        
+    project_dir = os.path.dirname(project_path)
+    print(f"[README DEBUG] Searching for readme in: {project_dir}")
+    
+    # Case insensitive search for readme*
+    for root, dirs, files in os.walk(project_dir, topdown=True):
+        # Only check current directory
+        # Modify dirs in-place to empty it preventing recursion
+        dirs[:] = []
+        
+        for file in files:
+            print(f"[README DEBUG] Checking file: {file}")
+            if file.lower().startswith("readme") and file.lower().endswith(".md"):
+                found = os.path.join(project_dir, file)
+                print(f"[README DEBUG] Found readme: {found}")
+                return found
+    
+    print("[README DEBUG] No readme found")
+    return None
+
+def read_readme_content(readme_path: str) -> str:
+    """Read content of a readme file."""
+    try:
+        with open(readme_path, 'r', encoding='utf-8') as f:
+            return f.read()
+    except Exception as e:
+        return f"Error reading README: {e}"
+
 def load_icon_texture(icon_path: str, size: int = 50) -> Optional[str]:
     """Load an image and create a DearPyGui texture for it.
     
@@ -1182,107 +1216,156 @@ def on_toggle_icons(sender, app_data):
     build_recent_files_list()
     build_templates_list()
 
+def on_toggle_readme(sender, app_data):
+    """Callback when show readme is toggled."""
+    global show_readme, app_config
+
+    show_readme = app_data
+    app_config['show_readme'] = show_readme
+    save_config(app_config)
+
+    # Sync checkboxes
+    if dpg.does_item_exist("show_readme_checkbox"):
+        dpg.set_value("show_readme_checkbox", show_readme)
+    if dpg.does_item_exist("show_readme_checkbox_templates"):
+        dpg.set_value("show_readme_checkbox_templates", show_readme)
+
+    # Toggle panel visibility and column width
+    if dpg.does_item_exist("readme_panel_group"):
+        dpg.configure_item("readme_panel_group", show=show_readme)
+    if dpg.does_item_exist("readme_column"):
+        dpg.configure_item("readme_column", init_width_or_weight=310 if show_readme else 0)
+
+    # Resize viewport
+    if show_readme:
+        dpg.set_viewport_width(960)
+        update_readme_panel()
+    else:
+        dpg.set_viewport_width(650)
+
 def on_row_clicked(sender, app_data, user_data):
     """Handle clicks on non-selectable row items (icons, text)."""
-    # Debug what we received
-    print(f"[ROW DEBUG] Handler triggered! app_data={app_data}")
-    
-    # app_data appears to be (mouse_button, item_id) based on logs (0, 38)
-    # But let's be robust and try to find the item ID/Tag
-    
-    clicked_tag = None
-    
-    # Check both values in app_data tuple
-    for val in app_data:
-        # If it's a string, it might be an alias
-        if isinstance(val, str):
-            clicked_tag = val
-            break
-        # If it's an int, check if it maps to an alias we recognize
-        elif isinstance(val, int):
-            alias = dpg.get_item_alias(val)
-            if alias and ("recent_" in alias or "template_" in alias):
-                clicked_tag = alias
-                break
-    
-    if not clicked_tag:
-        print(f"[ROW DEBUG] Could not determine clicked tag from {app_data}")
-        return
-        
-    print(f"[ROW DEBUG] Identified clicked tag: {clicked_tag}")
-    
     try:
-        if "recent_" in clicked_tag:
+        # app_data is (mouse_button, item_id)
+        if not isinstance(app_data, tuple) or len(app_data) < 2:
+            return
+
+        item_id = app_data[1]
+        clicked_tag = dpg.get_item_alias(item_id)
+
+        if not clicked_tag:
+            return
+
+        # Determine list type and extract index from tag
+        # Tags are like: recent_icon_0, recent_mod_0, recent_path_0, recent_missing_0
+        #            or: template_icon_0, template_mod_0, template_path_0, template_missing_0
+
+        if clicked_tag.startswith("recent_"):
             list_type = "recent"
-            # Extract index from tags like "recent_icon_5", "recent_mod_5"
-            idx = int(clicked_tag.split("_")[-1])
             items = app_config.get('recent_files', [])
-        elif "template_" in clicked_tag:
+        elif clicked_tag.startswith("template_"):
             list_type = "template"
-            idx = int(clicked_tag.split("_")[-1])
             items = app_config.get('templates', [])
         else:
             return
 
-        if 0 <= idx < len(items):
-            item = items[idx]
-            file_path = item.get('path', '')
-            
-            # Switch to correct tab if needed (though we should be on it)
-            if list_type == "recent":
-                if dpg.get_value("file_picker_tabs") != dpg.get_alias_id("recent_files_tab"):
-                    dpg.set_value("file_picker_tabs", dpg.get_alias_id("recent_files_tab"))
-            else:
-                 if dpg.get_value("file_picker_tabs") != dpg.get_alias_id("templates_tab"):
-                    dpg.set_value("file_picker_tabs", dpg.get_alias_id("templates_tab"))
+        # Extract index - it's the last part after the final underscore
+        parts = clicked_tag.split("_")
+        if len(parts) < 2:
+            return
 
-            # Update selection index
-            global picker_selection_index
-            picker_selection_index = idx
-            update_picker_selection() # Creates visual highlight on the selectable
-            
-            # Iterate logic
-            on_file_selected(sender, app_data, {'path': file_path, 'type': list_type})
-            
-    except (ValueError, IndexError, AttributeError) as e:
+        try:
+            idx = int(parts[-1])
+        except ValueError:
+            return
+
+        if idx < 0 or idx >= len(items):
+            return
+
+        item = items[idx]
+        file_path = item.get('path', '')
+
+        if not file_path:
+            return
+
+        # Find the corresponding selectable tag
+        if list_type == "recent":
+            selectable_tag = f"recent_file_{idx}"
+        else:
+            selectable_tag = f"template_{idx}"
+
+        # Call on_file_selected with the selectable as sender
+        on_file_selected(selectable_tag, app_data, {'path': file_path, 'type': list_type})
+
+    except Exception as e:
         logger.debug(f"Row click error: {e}")
+
+def clear_all_selections():
+    """Clear selection state from all selectables in both lists."""
+    # Clear recent files selections
+    i = 0
+    while dpg.does_item_exist(f"recent_file_{i}"):
+        dpg.set_value(f"recent_file_{i}", False)
+        i += 1
+    # Clear template selections
+    i = 0
+    while dpg.does_item_exist(f"template_{i}"):
+        dpg.set_value(f"template_{i}", False)
+        i += 1
+
 
 def on_file_selected(sender, app_data, user_data):
     """Callback when a file is selected from recent files or templates."""
-    global selected_file_path, last_click_time, last_clicked_path, last_click_id, countdown_enabled
+    global selected_file_path, last_click_time, last_clicked_path, countdown_enabled
 
     file_path = user_data.get('path', '')
     current_time = time.time()
-    time_since_last = current_time - last_click_time
-    
-    # Ignore duplicate callbacks from the same mouse click
-    # This check prevents rapid duplicate events from being treated as double-click
-    if time_since_last < 0.05 and file_path == last_clicked_path:
-        return
 
-    # Check for double-click: same file clicked within 0.05-0.5 seconds
-    # Standard OS double-click time is 500ms
-    if file_path == last_clicked_path and 0.05 <= time_since_last < 0.5:
+    # Clear all other selections, keep only the clicked one selected
+    clear_all_selections()
+    if sender and dpg.does_item_exist(sender):
+        dpg.set_value(sender, True)
+
+    # For double-click: must be same file AND within time window
+    # Reset tracking if clicking a different file
+    if file_path != last_clicked_path:
+        # Different file clicked - just select it, reset double-click tracking
+        last_click_time = current_time
+        last_clicked_path = file_path
+
         if os.path.exists(file_path):
             selected_file_path = file_path
-            # Ensure countdown is disabled when double-clicking
+            update_version_panel()
+            countdown_enabled = False
+        return
+
+    # Same file clicked again - check timing for double-click
+    time_since_last = current_time - last_click_time
+
+    # Ignore duplicate callbacks from same physical click (< 50ms)
+    if time_since_last < 0.05:
+        return
+
+    # Double-click detection: 50ms to 500ms between clicks on same file
+    if 0.05 <= time_since_last < 0.5:
+        if os.path.exists(file_path):
+            selected_file_path = file_path
             countdown_enabled = False
             update_version_panel()
             launch_from_unified_ui(sender, app_data)
+        # Reset tracking after launch
+        last_click_time = 0
+        last_clicked_path = None
         return
 
-    # Update click tracking
+    # Too slow for double-click - treat as new first click
     last_click_time = current_time
-    last_clicked_path = file_path
+    # last_clicked_path already equals file_path
 
     if os.path.exists(file_path):
         selected_file_path = file_path
         update_version_panel()
-        # Disable countdown in picker mode to prevent auto-launch
         countdown_enabled = False
-        
-        # Update shared selection index to match clicked item
-        # This ensures visual state (highlight) is exclusive and correct
         try:
             items = get_current_list_items()
             for i, item in enumerate(items):
@@ -1553,6 +1636,46 @@ def build_templates_list():
                         small=True
                     )
 
+def update_readme_panel():
+    """Update the side panel with README content if available."""
+    print(f"[README DEBUG] Updating panel. show_readme={show_readme}, selected_file={selected_file_path}")
+    
+    # We update content even if hidden, so it's ready when toggled? 
+    # Or strict check? Strict check is fine.
+    if not show_readme:
+        return
+        
+    # Check if items exist (safe check)
+    if not dpg.does_item_exist("readme_status_text") or not dpg.does_item_exist("readme_content_text"):
+        print("[README DEBUG] Readme UI items invalid")
+        return
+    
+    if selected_file_path and os.path.exists(selected_file_path):
+         readme_path = find_readme(selected_file_path)
+         
+         if readme_path:
+             content = read_readme_content(readme_path)
+             print(f"[README DEBUG] Read content length: {len(content)}")
+             if len(content) > 5000:
+                 content = content[:5000] + "\n\n... (content truncated)"
+                 
+             # Update status title
+             dpg.set_value("readme_status_text", f"File: {os.path.basename(readme_path)}")
+             dpg.configure_item("readme_status_text", color=[100, 255, 100, 255])
+             
+             # Update content
+             dpg.set_value("readme_content_text", content)
+             print("[README DEBUG] Content updated via set_value.")
+         else:
+             print("[README DEBUG] Readme path not found")
+             dpg.set_value("readme_status_text", "No README found.")
+             dpg.configure_item("readme_status_text", color=[200, 100, 100, 255])
+             dpg.set_value("readme_content_text", "")
+    else:
+         dpg.set_value("readme_status_text", "Select a file...")
+         dpg.configure_item("readme_status_text", color=[150, 150, 150, 255])
+         dpg.set_value("readme_content_text", "")
+
 def update_version_panel():
     """Update the version panel when a file is selected."""
     global build_info, build_year, td_url, td_uri, td_filename, countdown_enabled
@@ -1611,6 +1734,9 @@ def update_version_panel():
     dpg.add_text(f'File: {filename}', parent="version_panel", color=[50, 255, 0, 255])
 
     version_installed = build_info in list(td_key_id_dict.keys())
+    
+    # Update Readme Panel as well
+    update_readme_panel()
 
     if not version_installed:
         dpg.add_text(
@@ -1674,9 +1800,10 @@ def update_version_panel():
 
 def build_unified_ui():
     """Build the unified file picker + version picker UI."""
-    global app_config, seconds_started, show_icons
+    global app_config, seconds_started, show_icons, show_readme
     app_config = load_config()
     show_icons = app_config.get('show_icons', False)
+    show_readme = app_config.get('show_readme', False)
 
     # Create Item Handler Registry for row clicks
     if dpg.does_item_exist("row_click_handler"):
@@ -1689,67 +1816,97 @@ def build_unified_ui():
         dpg.add_text(f'TD Launcher {app_version}', color=[50, 255, 0, 255])
         dpg.add_separator()
 
-        # ===== FILE SELECTION SECTION =====
-        # Tab bar with Recent Files and Templates tabs
-        with dpg.tab_bar(tag="file_picker_tabs"):
+        # Use table for side-by-side layout (more reliable than horizontal groups)
+        with dpg.table(tag="main_layout_table", header_row=False, borders_innerV=False,
+                       borders_outerV=False, borders_innerH=False, borders_outerH=False,
+                       no_pad_outerX=True, no_pad_innerX=True,
+                       policy=dpg.mvTable_SizingStretchProp):
+            dpg.add_table_column(width_stretch=True, init_width_or_weight=1.0)
+            dpg.add_table_column(tag="readme_column", width_fixed=True, init_width_or_weight=310 if show_readme else 0)
 
-            # ===== RECENT FILES TAB =====
-            with dpg.tab(label="Recent Files", tag="recent_files_tab"):
-                # Buttons row
-                with dpg.group(horizontal=True):
+            with dpg.table_row():
+                # LEFT COLUMN: Main UI
+                with dpg.group(tag="main_ui_group"):
+                    # ===== FILE SELECTION SECTION =====
+                    with dpg.tab_bar(tag="file_picker_tabs"):
+                        # ===== RECENT FILES TAB =====
+                        with dpg.tab(label="Recent Files", tag="recent_files_tab"):
+                            with dpg.group(horizontal=True):
+                                dpg.add_button(
+                                    label="Browse...",
+                                    tag="browse_btn_recent",
+                                    callback=browse_and_open_file
+                                )
+                                dpg.add_checkbox(
+                                    label="Show Icons",
+                                    tag="show_icons_checkbox",
+                                    default_value=show_icons,
+                                    callback=on_toggle_icons
+                                )
+                                dpg.add_checkbox(
+                                    label="Show Info",
+                                    tag="show_readme_checkbox",
+                                    default_value=show_readme,
+                                    callback=on_toggle_readme
+                                )
+                            with dpg.child_window(height=150, width=-1, tag="recent_files_list"):
+                                build_recent_files_list()
+
+                        # ===== TEMPLATES TAB =====
+                        with dpg.tab(label="Templates", tag="templates_tab"):
+                            with dpg.group(horizontal=True):
+                                dpg.add_button(
+                                    label="Add Template...",
+                                    callback=show_add_template_dialog,
+                                    tag="add_template_btn"
+                                )
+                                dpg.add_checkbox(
+                                    label="Show Icons",
+                                    tag="show_icons_checkbox_templates",
+                                    default_value=show_icons,
+                                    callback=on_toggle_icons
+                                )
+                                dpg.add_checkbox(
+                                    label="Show Info",
+                                    tag="show_readme_checkbox_templates",
+                                    default_value=show_readme,
+                                    callback=on_toggle_readme
+                                )
+                            with dpg.child_window(height=150, width=-1, tag="templates_list"):
+                                build_templates_list()
+
+                    dpg.add_separator()
+
+                    # ===== VERSION PANEL SECTION =====
+                    with dpg.child_window(height=250, width=-1, tag="version_panel"):
+                        dpg.add_text(
+                            "Select a file above to see version info",
+                            color=[150, 150, 150, 255]
+                        )
+
+                    dpg.add_separator()
+
+                    # ===== LAUNCH BUTTON =====
                     dpg.add_button(
-                        label="Browse...",
-                        tag="browse_btn_recent",
-                        callback=browse_and_open_file
-                    )
-                    dpg.add_checkbox(
-                        label="Show Icons",
-                        tag="show_icons_checkbox",
-                        default_value=show_icons,
-                        callback=on_toggle_icons
-                    )
-                with dpg.child_window(height=150, width=-1, tag="recent_files_list"):
-                    build_recent_files_list()
-
-            # ===== TEMPLATES TAB =====
-            with dpg.tab(label="Templates", tag="templates_tab"):
-                # Buttons row
-                with dpg.group(horizontal=True):
-                    dpg.add_button(
-                        label="Add Template...",
-                        callback=show_add_template_dialog,
-                        tag="add_template_btn"
-                    )
-                    dpg.add_checkbox(
-                        label="Show Icons",
-                        tag="show_icons_checkbox_templates",
-                        default_value=show_icons,
-                        callback=on_toggle_icons
+                        label="Select a file to launch",
+                        tag="launch_button",
+                        width=-1,
+                        height=40,
+                        callback=launch_from_unified_ui,
+                        enabled=False
                     )
 
-                with dpg.child_window(height=150, width=-1, tag="templates_list"):
-                    build_templates_list()
-
-        dpg.add_separator()
-
-        # ===== VERSION PANEL SECTION =====
-        with dpg.child_window(height=250, width=-1, tag="version_panel"):
-            dpg.add_text(
-                "Select a file above to see version info",
-                color=[150, 150, 150, 255]
-            )
-
-        dpg.add_separator()
-
-        # ===== LAUNCH BUTTON =====
-        dpg.add_button(
-            label="Select a file to launch",
-            tag="launch_button",
-            width=-1,
-            height=40,
-            callback=launch_from_unified_ui,
-            enabled=False
-        )
+                # RIGHT COLUMN: Readme Panel (always created, visibility controlled by show_readme)
+                with dpg.group(tag="readme_panel_group", show=show_readme):
+                    dpg.add_text("Project Info", color=[200, 200, 200, 255])
+                    dpg.add_separator()
+                    dpg.add_text("Select a file...", tag="readme_status_text", color=[150, 150, 150, 255], wrap=280)
+                    dpg.add_separator()
+                    with dpg.child_window(width=290, height=400, tag="readme_scroll_area", border=False):
+                        dpg.add_text("", tag="readme_content_text", wrap=270, color=[255, 255, 255, 255])
+    
+    dpg.set_primary_window("Primary Window", True)
+    seconds_started = time.time()
 
     dpg.set_primary_window("Primary Window", True)
     seconds_started = time.time()
@@ -1803,7 +1960,10 @@ if not picker_mode and td_file_path:
     build_recent_files_list()
 
 logger.info("🪟 Creating GUI viewport...")
-dpg.create_viewport(title=f'TD Launcher {app_version}', width=800, height=550, resizable=True)
+initial_width = 650
+if app_config and app_config.get('show_readme', False):
+    initial_width += 300
+dpg.create_viewport(title=f'TD Launcher {app_version}', width=initial_width, height=550, resizable=True)
 dpg.setup_dearpygui()
 dpg.show_viewport()
 dpg.set_primary_window("Primary Window", True)
