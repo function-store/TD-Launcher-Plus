@@ -44,6 +44,56 @@ If the required version of Touch is not found, the launcher will not launch anyt
 ### Alternative Usage
 You can also drag and drop `.toe` files directly onto the TD Launcher app icon.
 
+---
+
+## Features
+
+### Automatic Version Detection
+TD Launcher analyzes each `.toe` file to determine which TouchDesigner version it was created with, then launches it with the correct version automatically.
+
+- **Auto-launch timer:** After selecting a file, a 5-second countdown begins before launching
+- **Click to interrupt:** Click anywhere to stop the countdown and manually select a different version
+- **Missing version handling:** If the required version isn't installed, TD Launcher shows a download link and lets you choose an alternative version
+
+### Recent Files
+TD Launcher keeps track of recently opened projects. When you launch a `.toe` file, it's automatically added to the Recent Files list for quick access later.
+
+**Versioned files:** TouchDesigner auto-saves create versioned files like `project.7.toe`, `project.8.toe`, etc. TD Launcher intelligently handles these:
+- Versioned files are displayed as their non-versioned counterpart (e.g., `project.7.toe` shows as `project.toe`)
+- Multiple versions of the same project appear only once in the list
+- Files in a `Backup/` folder are shown with a `Backup/` prefix
+
+### Templates
+Save frequently-used project templates for quick access. Templates appear in a separate tab alongside Recent Files.
+
+- Click **"Add Template..."** to add a `.toe` file as a template
+- Templates persist between sessions
+- Remove templates with the **X** button
+
+### Project Icons
+TD Launcher can display project icons next to each file. Enable with the **"Show Icons"** checkbox.
+
+**Icon search order** (first found is used):
+1. `icon.png` / `icon.jpg` / `icon.jpeg` in the project folder
+2. `icon_temp.png` / `icon_temp.jpg` / `icon_temp.jpeg` (for auto-generated icons)
+3. `<projectname>.png` / `.jpg` / `.jpeg` (e.g., `MyProject.png` for `MyProject.toe`)
+4. `<projectname_without_version>.png` (e.g., `MyProject.png` for `MyProject.7.toe`)
+5. Falls back to the TD Launcher app icon
+
+### Project Info Panel
+Enable **"Show Info"** to display a README panel alongside the file picker. If a `README.md` file exists in the same folder as the selected project, its contents are displayed.
+
+### TouchDesigner Utility Component
+A companion TouchDesigner component (`TDLauncherUtility.toe`) is included that integrates with TD Launcher:
+
+- **Export project icon:** Automatically exports a thumbnail from your project as `icon_temp.png`
+- **Update recent files:** Notifies TD Launcher when you save, keeping the recent files list current
+- **Quick access:** Open TD Launcher directly from within TouchDesigner
+
+To use: Import `TDLauncherUtility.toe` into your project or add it to your palette.
+
+---
+
 ## How to build
 This was built with Python 3.10. Pyinstaller, and the wonderful [DearPyGui](https://github.com/hoffstadt/DearPyGui) for UI amongst other things.
 
