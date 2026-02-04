@@ -70,6 +70,10 @@ should_exit = False  # Global flag for graceful shutdown on macOS
 picker_mode = False  # True = file picker UI, False = version picker UI
 selected_file_path = None  # Currently selected file in picker mode
 app_config = None  # Will hold the loaded config
+last_click_time = 0  # For double-click detection
+last_clicked_path = None  # For double-click detection
+last_click_id = None  # Combination of path+time to detect true duplicates
+picker_selection_index = 0  # Current selection index in file picker lists
 
 # ============================================================================
 # Config Module - Persistent storage for recent files and templates
@@ -80,6 +84,7 @@ DEFAULT_CONFIG = {
     'recent_files': [],  # List of dicts: [{'path': str, 'last_opened': timestamp}, ...]
     'templates': [],  # List of dicts: [{'path': str, 'name': str, 'added': timestamp}, ...]
     'max_recent_files': 20,
+    'confirm_remove_from_list': True,  # Show confirmation when removing files from lists
 }
 
 def get_config_dir() -> str:
@@ -225,6 +230,56 @@ def remove_template(file_path: str, config: Optional[Dict[str, Any]] = None) -> 
         if t.get('path') != file_path
     ]
 
+    save_config(config)
+    return config
+
+def remove_recent_file(file_path: str, config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Remove a file from the recent files list. Returns updated config."""
+    if config is None:
+        config = load_config()
+
+    file_path = os.path.abspath(file_path)
+    config['recent_files'] = [
+        rf for rf in config['recent_files']
+        if rf.get('path') != file_path
+    ]
+
+    save_config(config)
+    return config
+
+def show_remove_confirmation(filename: str) -> tuple[bool, bool]:
+    """Show confirmation dialog for removing a file from list.
+    Returns (confirmed, never_ask_again)."""
+    if platform.system() == 'Darwin':  # macOS
+        try:
+            script = f'''
+            set dialogResult to display dialog "Remove \\"{filename}\\" from this list?\\n\\nThis only removes it from TD Launcher's list, not from your file system." buttons {{"Cancel", "Remove", "Remove & Don't Ask Again"}} default button "Remove" with title "Remove from List"
+            return button returned of dialogResult
+            '''
+            result = subprocess.run(
+                ['osascript', '-e', script],
+                capture_output=True,
+                text=True
+            )
+            button = result.stdout.strip()
+            if result.returncode != 0 or button == "Cancel":
+                return (False, False)
+            elif "Don't Ask Again" in button:
+                return (True, True)
+            else:
+                return (True, False)
+        except Exception as e:
+            logger.error(f"Failed to show confirmation dialog: {e}")
+            return (True, False)  # Default to allowing removal if dialog fails
+    else:
+        # Windows - just confirm for now
+        return (True, False)
+
+def set_confirm_remove_preference(never_ask: bool, config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Set the preference for confirmation dialogs."""
+    if config is None:
+        config = load_config()
+    config['confirm_remove_from_list'] = not never_ask
     save_config(config)
     return config
 
@@ -767,6 +822,111 @@ def exit_gui():
         sys.exit(1)
 
 # Keyboard navigation and actions
+def get_current_picker_tab() -> str:
+    """Get the currently active tab in picker mode. Returns 'recent' or 'templates'."""
+    try:
+        if dpg.does_item_exist("file_picker_tabs"):
+            active_tab = dpg.get_value("file_picker_tabs")
+            if active_tab == dpg.get_item_user_data("templates_tab") or active_tab == dpg.get_alias_id("templates_tab"):
+                return 'templates'
+    except Exception:
+        pass
+    return 'recent'
+
+
+def switch_picker_tab():
+    """Switch between Recent Files and Templates tabs."""
+    global picker_selection_index
+    try:
+        if not dpg.does_item_exist("file_picker_tabs"):
+            return
+
+        current_tab = get_current_picker_tab()
+        if current_tab == 'recent':
+            # Switch to templates tab
+            if dpg.does_item_exist("templates_tab"):
+                dpg.set_value("file_picker_tabs", dpg.get_alias_id("templates_tab"))
+        else:
+            # Switch to recent files tab
+            if dpg.does_item_exist("recent_files_tab"):
+                dpg.set_value("file_picker_tabs", dpg.get_alias_id("recent_files_tab"))
+
+        # Reset selection index when switching tabs
+        picker_selection_index = 0
+        update_picker_selection()
+    except Exception as e:
+        logger.debug(f"switch_picker_tab error: {e}")
+
+
+def get_current_list_items() -> list:
+    """Get the list of items in the currently active picker tab."""
+    if not app_config:
+        return []
+
+    current_tab = get_current_picker_tab()
+    if current_tab == 'recent':
+        return app_config.get('recent_files', [])
+    else:
+        return app_config.get('templates', [])
+
+
+def update_picker_selection():
+    """Update the visual selection in the picker list based on picker_selection_index."""
+    global selected_file_path, last_clicked_path, picker_selection_index
+
+    items = get_current_list_items()
+    if not items:
+        return
+
+    # Clamp index to valid range
+    picker_selection_index = max(0, min(picker_selection_index, len(items) - 1))
+
+    current_tab = get_current_picker_tab()
+    item = items[picker_selection_index]
+    file_path = item.get('path', '')
+
+    # Update selection state
+    if os.path.exists(file_path):
+        selected_file_path = file_path
+        last_clicked_path = file_path
+
+        # Update button
+        if dpg.does_item_exist("open_selected_btn"):
+            dpg.configure_item("open_selected_btn", enabled=True)
+            filename = os.path.basename(file_path)
+            dpg.configure_item("open_selected_btn", label=f"Open: {filename}")
+        
+        # Update version panel when navigating with keyboard
+        # But do NOT enable countdown in picker mode - we don't want auto-launch
+        update_version_panel()
+        # Ensure countdown is disabled in picker mode
+        global countdown_enabled
+        countdown_enabled = False
+
+    # Update visual selection (highlight the selected row)
+    # Clear all selections first, then set the current one
+    for i in range(len(items)):
+        if current_tab == 'recent':
+            tag = f"recent_file_{i}"
+        else:
+            tag = f"template_{i}"
+
+        if dpg.does_item_exist(tag):
+            dpg.set_value(tag, i == picker_selection_index)
+
+
+def move_picker_selection(step: int):
+    """Move selection up or down in the current picker list."""
+    global picker_selection_index
+
+    items = get_current_list_items()
+    if not items:
+        return
+
+    picker_selection_index = (picker_selection_index + step) % len(items)
+    update_picker_selection()
+
+
 def move_selection(step: int):
     try:
         if not version_keys:
@@ -789,19 +949,70 @@ def on_key_press(sender, app_data):
         cancel_countdown()
 
         key_code = app_data
-        if key_code == getattr(dpg, 'mvKey_Up', None):
-            move_selection(-1)
-        elif key_code == getattr(dpg, 'mvKey_Down', None):
-            move_selection(1)
-        elif key_code in (
+
+        # Tab key - switch tabs in picker mode
+        if key_code == getattr(dpg, 'mvKey_Tab', None):
+            if picker_mode:
+                switch_picker_tab()
+            return
+
+        # Up arrow or W key - move selection up
+        if key_code in (
+            getattr(dpg, 'mvKey_Up', None),
+            getattr(dpg, 'mvKey_W', None),
+        ):
+            if picker_mode:
+                move_picker_selection(-1)
+            else:
+                move_selection(-1)
+            return
+
+        # Down arrow or S key - move selection down
+        if key_code in (
+            getattr(dpg, 'mvKey_Down', None),
+            getattr(dpg, 'mvKey_S', None),
+        ):
+            if picker_mode:
+                move_picker_selection(1)
+            else:
+                move_selection(1)
+            return
+
+        # Enter key - open selected file or launch
+        if key_code in (
             getattr(dpg, 'mvKey_Enter', None),
             getattr(dpg, 'mvKey_Return', None),
             getattr(dpg, 'mvKey_KeyPadEnter', None),
             getattr(dpg, 'mvKey_KeypadEnter', None),
         ):
-            launch_toe_with_version(sender, app_data)
-        elif key_code == getattr(dpg, 'mvKey_Escape', None):
+            if selected_file_path:
+                launch_from_unified_ui(sender, app_data)
+            return
+
+        # Escape key - exit
+        if key_code == getattr(dpg, 'mvKey_Escape', None):
             exit_gui()
+            return
+
+        # Backspace/Delete - remove selected file from list
+        if key_code in (
+            getattr(dpg, 'mvKey_Back', None),
+            getattr(dpg, 'mvKey_Backspace', None),
+            getattr(dpg, 'mvKey_Delete', None),
+        ):
+            # In picker mode, backspace/delete removes the selected file from list
+            if picker_mode and selected_file_path and last_clicked_path:
+                # Determine which list the file is in
+                if app_config:
+                    recent_paths = [rf.get('path') for rf in app_config.get('recent_files', [])]
+                    template_paths = [t.get('path') for t in app_config.get('templates', [])]
+                    abs_path = os.path.abspath(last_clicked_path)
+                    if abs_path in recent_paths:
+                        confirm_and_remove_from_list(last_clicked_path, 'recent')
+                    elif abs_path in template_paths:
+                        confirm_and_remove_from_list(last_clicked_path, 'template')
+            return
+
     except Exception as e:
         logger.debug(f"on_key_press error: {e}")
 
@@ -809,42 +1020,101 @@ def on_key_press(sender, app_data):
 # File Picker UI (when no file is specified)
 # ============================================================================
 
+def format_file_modified_time(file_path: str) -> str:
+    """Get formatted modification time for a file."""
+    try:
+        mtime = os.path.getmtime(file_path)
+        from datetime import datetime
+        dt = datetime.fromtimestamp(mtime)
+        return dt.strftime("%Y-%m-%d %H:%M")
+    except (OSError, ValueError):
+        return ""
+
 def on_file_selected(sender, app_data, user_data):
     """Callback when a file is selected from recent files or templates."""
-    global selected_file_path
+    global selected_file_path, last_click_time, last_clicked_path, last_click_id, countdown_enabled
 
     file_path = user_data.get('path', '')
+    current_time = time.time()
+    time_since_last = current_time - last_click_time
+    
+    # Ignore duplicate callbacks from the same mouse click
+    # This check prevents rapid duplicate events from being treated as double-click
+    if time_since_last < 0.05 and file_path == last_clicked_path:
+        return
+
+    # Check for double-click: same file clicked within 0.05-0.5 seconds
+    # Standard OS double-click time is 500ms
+    if file_path == last_clicked_path and 0.05 <= time_since_last < 0.5:
+        if os.path.exists(file_path):
+            selected_file_path = file_path
+            # Ensure countdown is disabled when double-clicking
+            countdown_enabled = False
+            update_version_panel()
+            launch_from_unified_ui(sender, app_data)
+        return
+
+    # Update click tracking
+    last_click_time = current_time
+    last_clicked_path = file_path
 
     if os.path.exists(file_path):
         selected_file_path = file_path
-        dpg.configure_item("open_selected_btn", enabled=True)
-
-        # Update button label to show selected file
-        filename = os.path.basename(file_path)
-        dpg.configure_item("open_selected_btn", label=f"Open: {filename}")
+        update_version_panel()
+        # Disable countdown in picker mode to prevent auto-launch
+        countdown_enabled = False
     else:
         selected_file_path = None
-        dpg.configure_item("open_selected_btn", enabled=False)
-        dpg.configure_item("open_selected_btn", label="Open Selected File")
+        update_version_panel()
+
+def confirm_and_remove_from_list(file_path: str, list_type: str):
+    """Confirm and remove a file from either recent files or templates list."""
+    global app_config
+
+    filename = os.path.basename(file_path)
+
+    # Check if we should show confirmation
+    if app_config.get('confirm_remove_from_list', True):
+        confirmed, never_ask = show_remove_confirmation(filename)
+        if not confirmed:
+            return
+        if never_ask:
+            app_config = set_confirm_remove_preference(True, config=app_config)
+
+    # Remove from the appropriate list
+    if list_type == 'recent':
+        app_config = remove_recent_file(file_path, config=app_config)
+        build_recent_files_list()
+    elif list_type == 'template':
+        app_config = remove_template(file_path, config=app_config)
+        build_templates_list()
+
+    # Clear selection if we removed the selected file
+    global selected_file_path
+    if selected_file_path and os.path.abspath(selected_file_path) == os.path.abspath(file_path):
+        selected_file_path = None
+        if dpg.does_item_exist("open_selected_btn"):
+            dpg.configure_item("open_selected_btn", enabled=False)
+            dpg.configure_item("open_selected_btn", label="Open Selected File")
 
 def on_remove_template(sender, app_data, user_data):
     """Remove a template from the list."""
-    global app_config
-
     file_path = user_data
-    app_config = remove_template(file_path, config=app_config)
-    build_templates_list()
+    confirm_and_remove_from_list(file_path, 'template')
 
-def show_add_template_dialog(sender, app_data):
-    """Show native OS file picker dialog for adding templates."""
-    global app_config
+def on_remove_recent_file(sender, app_data, user_data):
+    """Remove a file from the recent files list."""
+    file_path = user_data
+    confirm_and_remove_from_list(file_path, 'recent')
 
+def show_native_file_picker(prompt: str = "Select TouchDesigner File") -> Optional[str]:
+    """Show native OS file picker and return selected path, or None if cancelled."""
     file_path = None
 
     if platform.system() == 'Darwin':  # macOS - use AppleScript
         try:
-            script = '''
-            set theFile to choose file with prompt "Select TouchDesigner Project Template" of type {"toe"}
+            script = f'''
+            set theFile to choose file with prompt "{prompt}" of type {{"toe"}}
             return POSIX path of theFile
             '''
             result = subprocess.run(
@@ -863,19 +1133,36 @@ def show_add_template_dialog(sender, app_data):
         root.attributes('-topmost', True)
 
         file_path = filedialog.askopenfilename(
-            title="Select TouchDesigner Project Template",
+            title=prompt,
             filetypes=[("TouchDesigner Files", "*.toe"), ("All Files", "*.*")],
             initialdir=os.path.expanduser("~")
         )
 
         root.destroy()
 
-    if file_path and file_path.lower().endswith('.toe'):
+    return file_path if file_path and file_path.lower().endswith('.toe') else None
+
+def show_add_template_dialog(sender, app_data):
+    """Show native OS file picker dialog for adding templates."""
+    global app_config
+
+    file_path = show_native_file_picker("Select TouchDesigner Project Template")
+
+    if file_path:
         app_config = add_template(file_path, config=app_config)
         logger.info(f"Added template: {file_path}")
         build_templates_list()
-    elif file_path:
-        logger.warning(f"Invalid template file (must be .toe): {file_path}")
+
+def browse_and_open_file(sender, app_data):
+    """Browse for a .toe file and select it (updates version panel)."""
+    global selected_file_path, last_clicked_path
+
+    file_path = show_native_file_picker("Open TouchDesigner File")
+
+    if file_path:
+        selected_file_path = file_path
+        last_clicked_path = file_path
+        update_version_panel()
 
 def build_recent_files_list():
     """Populate the recent files list."""
@@ -902,6 +1189,7 @@ def build_recent_files_list():
 
         # Check if file still exists
         exists = os.path.exists(file_path)
+        modified = format_file_modified_time(file_path) if exists else ""
 
         with dpg.group(horizontal=True, parent="recent_files_list"):
             dpg.add_selectable(
@@ -909,7 +1197,11 @@ def build_recent_files_list():
                 tag=f"recent_file_{i}",
                 callback=on_file_selected,
                 user_data={'path': file_path, 'type': 'recent'},
-                width=300
+                width=200
+            )
+            dpg.add_text(
+                f"  {modified}",
+                color=[100, 150, 100, 255] if exists else [100, 50, 50, 255]
             )
             dpg.add_text(
                 f"  {directory}",
@@ -918,6 +1210,15 @@ def build_recent_files_list():
 
             if not exists:
                 dpg.add_text(" (missing)", color=[255, 50, 0, 255])
+
+            # Remove button (on the right)
+            dpg.add_button(
+                label="X",
+                tag=f"remove_recent_{i}",
+                callback=on_remove_recent_file,
+                user_data=file_path,
+                small=True
+            )
 
 def build_templates_list():
     """Populate the templates list."""
@@ -940,6 +1241,7 @@ def build_templates_list():
         file_path = t.get('path', '')
         name = t.get('name', os.path.basename(file_path))
         exists = os.path.exists(file_path)
+        modified = format_file_modified_time(file_path) if exists else ""
 
         with dpg.group(horizontal=True, parent="templates_list"):
             dpg.add_selectable(
@@ -947,11 +1249,15 @@ def build_templates_list():
                 tag=f"template_{i}",
                 callback=on_file_selected,
                 user_data={'path': file_path, 'type': 'template'},
-                width=300
+                width=220
             )
+            dpg.add_text(f"  {modified}", color=[100, 150, 100, 255])
             dpg.add_text(f"  {file_path}", color=[150, 150, 150, 255])
 
-            # Remove button
+            if not exists:
+                dpg.add_text(" (missing)", color=[255, 50, 0, 255])
+
+            # Remove button on the right
             dpg.add_button(
                 label="X",
                 tag=f"remove_template_{i}",
@@ -960,24 +1266,33 @@ def build_templates_list():
                 small=True
             )
 
-            if not exists:
-                dpg.add_text(" (missing)", color=[255, 50, 0, 255])
+def update_version_panel():
+    """Update the version panel when a file is selected."""
+    global build_info, build_year, td_url, td_uri, td_filename, countdown_enabled
 
-def open_selected_file(sender, app_data):
-    """Open the selected file - this transitions to the version picker UI."""
-    global td_file_path, picker_mode, app_config, build_info, build_year, td_url, td_uri, td_filename, countdown_enabled
+    # Clear existing version panel content
+    if dpg.does_item_exist("version_panel"):
+        dpg.delete_item("version_panel", children_only=True)
 
-    if selected_file_path is None:
+    if selected_file_path is None or not os.path.exists(selected_file_path):
+        # No file selected - show placeholder
+        dpg.add_text(
+            "Select a file above to see version info",
+            parent="version_panel",
+            color=[150, 150, 150, 255]
+        )
+        dpg.configure_item("launch_button", enabled=False)
+        dpg.configure_item("launch_button", label="Select a file to launch")
+        countdown_enabled = False
         return
 
-    td_file_path = selected_file_path
-    picker_mode = False
-
-    # Log as recent file
-    app_config = add_recent_file(td_file_path, config=app_config)
-
-    # Run the version detection
+    # Analyze the selected file
     try:
+        # Temporarily set td_file_path for inspect_toe_v2
+        global td_file_path
+        old_td_file_path = td_file_path
+        td_file_path = selected_file_path
+
         build_info = inspect_toe_v2()
         build_year = int(build_info.split('.')[1])
 
@@ -995,81 +1310,35 @@ def open_selected_file(sender, app_data):
 
     except Exception as e:
         logger.error(f"Failed to analyze TOE file: {e}")
-        # Show error in the UI instead of exiting
-        dpg.configure_item("open_selected_btn", label=f"Error: {e}")
+        dpg.add_text(
+            f"Error analyzing file: {e}",
+            parent="version_panel",
+            color=[255, 50, 0, 255]
+        )
+        dpg.configure_item("launch_button", enabled=False)
+        dpg.configure_item("launch_button", label="Error analyzing file")
         return
 
-    # Delete the picker UI and rebuild with version picker
-    dpg.delete_item("Primary Window")
+    # Show version info
+    filename = os.path.basename(selected_file_path)
+    dpg.add_text(f'File: {filename}', parent="version_panel", color=[50, 255, 0, 255])
 
-    # Rebuild with version picker UI
-    build_version_picker_ui()
+    version_installed = build_info in list(td_key_id_dict.keys())
 
-    # Set countdown state
-    if build_info not in list(td_key_id_dict.keys()):
-        countdown_enabled = False
-    else:
-        countdown_enabled = True
-
-def build_file_picker_ui():
-    """Build the tabbed recent files / templates picker UI."""
-    global app_config
-    app_config = load_config()
-
-    with dpg.window(tag="Primary Window"):
-        dpg.add_text(f'TD Launcher {app_version}', color=[50, 255, 0, 255])
-        dpg.add_text('Select a recent file or template to open:',
-                     color=[200, 200, 200, 255])
-        dpg.add_separator()
-
-        # Tab bar with Recent Files and Templates tabs
-        with dpg.tab_bar(tag="file_picker_tabs"):
-
-            # ===== RECENT FILES TAB =====
-            with dpg.tab(label="Recent Files", tag="recent_files_tab"):
-                with dpg.child_window(height=300, width=-1, tag="recent_files_list"):
-                    build_recent_files_list()
-
-            # ===== TEMPLATES TAB =====
-            with dpg.tab(label="Templates", tag="templates_tab"):
-                # Add Template button and drag-drop instructions
-                with dpg.group(horizontal=True):
-                    dpg.add_button(
-                        label="Add Template...",
-                        callback=show_add_template_dialog,
-                        tag="add_template_btn"
-                    )
-                    dpg.add_text("  (drag .toe onto app icon to open)", color=[150, 150, 150, 255])
-
-                dpg.add_separator()
-
-                with dpg.child_window(height=260, width=-1, tag="templates_list"):
-                    build_templates_list()
-
-        dpg.add_separator()
-
-        # Open button (disabled until selection)
-        dpg.add_button(
-            label="Open Selected File",
-            tag="open_selected_btn",
-            width=-1,
-            height=-1,
-            callback=open_selected_file,
-            enabled=False
+    if not version_installed:
+        dpg.add_text(
+            f'Required: {build_info} (NOT INSTALLED)',
+            parent="version_panel",
+            color=[255, 50, 0, 255],
+            tag="detected_version"
         )
 
-def build_version_picker_ui():
-    """Build the version picker UI (existing UI, refactored into a function)."""
-    global seconds_started
-
-    with dpg.window(tag="Primary Window"):
-        dpg.add_text(f'Detected TD File: {td_file_path}', color=[50,255,0,255])
-
-        if build_info not in list(td_key_id_dict.keys()):
-            dpg.add_text(f'Detected TD Version: {build_info} (NOT INSTALLED)', color=[255,50,0,255], tag="detected_version")
-            with dpg.table(header_row=False, policy=dpg.mvTable_SizingFixedFit, row_background=True, resizable=False, no_host_extendX=False, hideable=True,
-                       borders_innerV=False, delay_search=True, borders_outerV=False, borders_innerH=False,
-                       borders_outerH=False, width=-1):
+        # Download/install controls
+        with dpg.group(parent="version_panel"):
+            with dpg.table(header_row=False, policy=dpg.mvTable_SizingFixedFit, row_background=True,
+                          resizable=False, no_host_extendX=False, hideable=True,
+                          borders_innerV=False, delay_search=True, borders_outerV=False,
+                          borders_innerH=False, borders_outerH=False, width=-1):
                 dpg.add_table_column(width_stretch=True)
                 with dpg.table_row():
                     with dpg.filter_set(id="download_filter"):
@@ -1077,30 +1346,125 @@ def build_version_picker_ui():
                             dpg.set_value("download_filter", 'a')
                         else:
                             dpg.set_value("download_filter", 'c')
-                        dpg.add_button(label=f'Download : {build_info}', width=-1, callback=start_download, filter_key="a")
+                        dpg.add_button(label=f'Download: {build_info}', width=-1, callback=start_download, filter_key="a")
                         dpg.add_progress_bar(overlay=f'downloading 0.0%', tag='download_progress_bar', width=-1, default_value=download_progress, filter_key="b")
-                        dpg.add_text(f'TD versions from 2019 and earlier are not yet compatible with this launcher.', color=[255,50,0,255], filter_key="c")
-                        dpg.add_text(f'Error downloading build... go to derivative.ca to manually download', color=[255,50,0,255], filter_key="d")
+                        dpg.add_text(f'TD versions from 2019 and earlier are not yet compatible.', color=[255, 50, 0, 255], filter_key="c")
+                        dpg.add_text(f'Error downloading - go to derivative.ca to download manually', color=[255, 50, 0, 255], filter_key="d")
 
             with dpg.filter_set(id="install_filter"):
                 dpg.set_value("install_filter", 'z')
-                dpg.add_button(label=f'Install : {build_info}', width=-1, enabled=True, filter_key="a", callback=install_touchdesigner_version)
+                dpg.add_button(label=f'Install: {build_info}', width=-1, enabled=True, filter_key="a", callback=install_touchdesigner_version)
 
-        else:
-            dpg.add_text(f'Detected TD Version: {build_info}', color=[50,255,0,255], tag="detected_version")
+        countdown_enabled = False
+    else:
+        dpg.add_text(
+            f'Required: {build_info} (installed)',
+            parent="version_panel",
+            color=[50, 255, 0, 255],
+            tag="detected_version"
+        )
+        countdown_enabled = True
+        # Reset the countdown timer when selecting a new file
+        global seconds_started
+        seconds_started = time.time()
+
+    dpg.add_separator(parent="version_panel")
+
+    # Version selection
+    dpg.add_text("Override version:", parent="version_panel", color=[150, 150, 150, 255])
+    with dpg.child_window(height=150, width=-1, parent="version_panel", tag="version_list_panel"):
+        dpg.add_radio_button(
+            version_keys,
+            default_value=build_info if build_info in version_keys else (version_keys[0] if version_keys else None),
+            tag="td_version",
+            horizontal=False
+        )
+
+    # Update launch button
+    dpg.configure_item("launch_button", enabled=True)
+    dpg.configure_item("launch_button", label=f"Launch {filename}")
+
+
+def build_unified_ui():
+    """Build the unified file picker + version picker UI."""
+    global app_config, seconds_started
+    app_config = load_config()
+
+    with dpg.window(tag="Primary Window"):
+        dpg.add_text(f'TD Launcher {app_version}', color=[50, 255, 0, 255])
+        dpg.add_separator()
+
+        # ===== FILE SELECTION SECTION =====
+        # Tab bar with Recent Files and Templates tabs
+        with dpg.tab_bar(tag="file_picker_tabs"):
+
+            # ===== RECENT FILES TAB =====
+            with dpg.tab(label="Recent Files", tag="recent_files_tab"):
+                # Buttons row
+                with dpg.group(horizontal=True):
+                    dpg.add_button(
+                        label="Browse...",
+                        tag="browse_btn_recent",
+                        callback=browse_and_open_file
+                    )
+                with dpg.child_window(height=150, width=-1, tag="recent_files_list"):
+                    build_recent_files_list()
+
+            # ===== TEMPLATES TAB =====
+            with dpg.tab(label="Templates", tag="templates_tab"):
+                # Buttons row
+                with dpg.group(horizontal=True):
+                    dpg.add_button(
+                        label="Add Template...",
+                        callback=show_add_template_dialog,
+                        tag="add_template_btn"
+                    )
+
+                with dpg.child_window(height=150, width=-1, tag="templates_list"):
+                    build_templates_list()
 
         dpg.add_separator()
 
-        with dpg.child_window(height=200, width=-1):
-            dpg.add_radio_button(version_keys, default_value=build_info, label='TD Version', tag="td_version", horizontal=False)
+        # ===== VERSION PANEL SECTION =====
+        with dpg.child_window(height=250, width=-1, tag="version_panel"):
+            dpg.add_text(
+                "Select a file above to see version info",
+                color=[150, 150, 150, 255]
+            )
 
         dpg.add_separator()
-        dpg.add_button(label=f'Open with selected version in {5} seconds', tag="launch_button", width=-1, height=-1, callback=launch_toe_with_version)
+
+        # ===== LAUNCH BUTTON =====
+        dpg.add_button(
+            label="Select a file to launch",
+            tag="launch_button",
+            width=-1,
+            height=40,
+            callback=launch_from_unified_ui,
+            enabled=False
+        )
 
     dpg.set_primary_window("Primary Window", True)
-
-    # Reset countdown timer
     seconds_started = time.time()
+
+
+def launch_from_unified_ui(sender, app_data):
+    """Launch the selected file from the unified UI."""
+    global td_file_path, app_config
+
+    if selected_file_path is None:
+        return
+
+    td_file_path = selected_file_path
+
+    # Log as recent file
+    app_config = add_recent_file(td_file_path, config=app_config)
+
+    # Refresh the recent files list
+    build_recent_files_list()
+
+    # Launch with selected version
+    launch_toe_with_version(sender, app_data)
 
 # ============================================================================
 
@@ -1119,15 +1483,20 @@ with dpg.handler_registry():
     dpg.add_mouse_click_handler(callback=cancel_countdown)
     dpg.add_key_press_handler(callback=on_key_press)
 
-# Build appropriate UI based on mode
-if picker_mode:
-    build_file_picker_ui()
-    countdown_enabled = False  # No countdown in picker mode
-else:
-    build_version_picker_ui()
+# Build unified UI (always use the same UI)
+build_unified_ui()
+
+# If a file was passed via command line, pre-select it
+if not picker_mode and td_file_path:
+    selected_file_path = td_file_path
+    last_clicked_path = td_file_path
+    update_version_panel()
+    # Log as recent file
+    app_config = add_recent_file(td_file_path, config=app_config)
+    build_recent_files_list()
 
 logger.info("🪟 Creating GUI viewport...")
-dpg.create_viewport(title=f'TD Launcher {app_version}', width=800, height=442, resizable=True)
+dpg.create_viewport(title=f'TD Launcher {app_version}', width=800, height=550, resizable=True)
 dpg.setup_dearpygui()
 dpg.show_viewport()
 dpg.set_primary_window("Primary Window", True)
