@@ -1,0 +1,277 @@
+"""TouchDesigner version discovery and .toe file inspection."""
+
+import os
+import platform
+import re
+import glob
+import plistlib
+import subprocess
+import logging
+from typing import Dict, Optional, Tuple
+
+logger = logging.getLogger(__name__)
+
+
+class TDManager:
+    """Manages TouchDesigner version discovery and .toe file operations."""
+
+    def __init__(self):
+        self.versions: Dict[str, dict] = {}
+        self.discover_versions()
+
+    def discover_versions(self) -> Dict[str, dict]:
+        """Discover installed TouchDesigner versions."""
+        if platform.system() == 'Windows':
+            self.versions = self._query_windows_registry()
+        else:
+            self.versions = self._query_mac_applications()
+        return self.versions
+
+    def _query_windows_registry(self) -> Dict[str, dict]:
+        """Query Windows registry for TouchDesigner installations."""
+        try:
+            import winreg
+        except ImportError:
+            return {}
+
+        td_dict = {}
+
+        try:
+            key = winreg.OpenKey(
+                winreg.HKEY_LOCAL_MACHINE,
+                r"SOFTWARE\Derivative"
+            )
+
+            num_subkeys = winreg.QueryInfoKey(key)[0]
+
+            for i in range(num_subkeys):
+                subkey_name = winreg.EnumKey(key, i)
+                try:
+                    subkey = winreg.OpenKey(key, subkey_name)
+                    try:
+                        install_path = winreg.QueryValueEx(subkey, "Path")[0]
+                        exe_path = os.path.join(install_path, "bin", "TouchDesigner.exe")
+                        if os.path.exists(exe_path):
+                            td_dict[subkey_name] = {
+                                'install_path': install_path,
+                                'executable': exe_path
+                            }
+                    except WindowsError:
+                        pass
+                    finally:
+                        winreg.CloseKey(subkey)
+                except WindowsError:
+                    pass
+
+            winreg.CloseKey(key)
+
+        except WindowsError:
+            pass
+
+        return td_dict
+
+    def _query_mac_applications(self) -> Dict[str, dict]:
+        """Query macOS Applications folder for TouchDesigner installations.
+
+        Reads Info.plist to get actual version info.
+        """
+        td_dict = {}
+        applications_dir = "/Applications"
+
+        # Look for TouchDesigner applications
+        td_pattern = os.path.join(applications_dir, "TouchDesigner*")
+        logger.debug(f"Searching pattern: {td_pattern}")
+        td_apps = glob.glob(td_pattern)
+        logger.debug(f"Found {len(td_apps)} potential TouchDesigner apps")
+
+        for app_path in td_apps:
+            if not app_path.endswith('.app'):
+                continue
+
+            app_name = os.path.basename(app_path)
+            info_plist_path = os.path.join(app_path, "Contents", "Info.plist")
+            logger.debug(f"Processing app: {app_name}")
+
+            try:
+                # Read the Info.plist file
+                with open(info_plist_path, 'rb') as f:
+                    plist_data = plistlib.load(f)
+
+                # Extract version information
+                bundle_version = plist_data.get('CFBundleVersion', '')
+                logger.debug(f"Bundle version: {bundle_version}")
+
+                if bundle_version:
+                    # Create a key in the format TouchDesigner.YEAR.BUILD
+                    version_parts = bundle_version.split('.')
+                    if len(version_parts) >= 2:
+                        year = version_parts[0]
+                        build = version_parts[1] if len(version_parts) > 1 else "0"
+                        td_key = f"TouchDesigner.{year}.{build}"
+
+                        executable_path = os.path.join(app_path, "Contents", "MacOS", "TouchDesigner")
+
+                        td_dict[td_key] = {
+                            'executable': executable_path,
+                            'app_path': app_path,
+                            'bundle_version': bundle_version
+                        }
+                        logger.debug(f"Found TouchDesigner: {td_key} at {executable_path}")
+                    else:
+                        logger.warning(f"Could not parse version from {bundle_version}")
+                else:
+                    logger.warning(f"No bundle version found for {app_name}")
+
+            except (FileNotFoundError, plistlib.InvalidFileException, KeyError) as e:
+                logger.error(f"Could not read Info.plist for {app_path}: {e}")
+
+        return td_dict
+
+    def get_sorted_version_keys(self) -> list:
+        """Get version keys sorted by year and build number."""
+        def parse_key(key: str) -> Tuple[int, int]:
+            try:
+                parts = key.split('.')
+                year = int(parts[1]) if len(parts) > 1 else -1
+                build = int(parts[2]) if len(parts) > 2 else -1
+                return (year, build)
+            except Exception:
+                return (-1, -1)
+
+        return sorted(list(self.versions.keys()), key=parse_key)
+
+    def is_version_installed(self, version: str) -> bool:
+        """Check if a specific version is installed."""
+        return version in self.versions
+
+    def get_executable(self, version: str) -> Optional[str]:
+        """Get the executable path for a version."""
+        if version in self.versions:
+            return self.versions[version].get('executable')
+        return None
+
+    def get_toeexpand_path(self) -> Optional[str]:
+        """Get path to toeexpand tool from an installed TD version."""
+        if platform.system() == 'Windows':
+            # On Windows, look for bundled toeexpand
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            toeexpand_path = os.path.join(current_dir, "toeexpand", "toeexpand.exe")
+            if os.path.exists(toeexpand_path):
+                return toeexpand_path
+        else:
+            # On Mac, use toeexpand from the first available TD installation
+            if self.versions:
+                first_app = list(self.versions.values())[0]
+                app_path = first_app.get('app_path')
+                if app_path:
+                    toeexpand_path = os.path.join(app_path, "Contents", "MacOS", "toeexpand")
+                    if os.path.exists(toeexpand_path):
+                        return toeexpand_path
+        return None
+
+    def inspect_toe_file(self, file_path: str) -> Optional[str]:
+        """Inspect a .toe file to determine its required TD version.
+
+        Uses toeexpand tool from TouchDesigner installation.
+        Returns version string like 'TouchDesigner.2023.12370' or None on error.
+        """
+        if not os.path.exists(file_path):
+            logger.error(f"File does not exist: {file_path}")
+            return None
+
+        toeexpand_path = self.get_toeexpand_path()
+        if not toeexpand_path:
+            logger.error("No toeexpand found - need TouchDesigner installation")
+            return None
+
+        logger.info("Analyzing TOE file version...")
+        logger.debug(f"Using toeexpand: {toeexpand_path}")
+
+        command = f'"{toeexpand_path}" -b "{file_path}"'
+        logger.debug(f"Running command: {command}")
+
+        try:
+            process = subprocess.Popen(
+                command,
+                shell=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE
+            )
+            out, err = process.communicate()
+
+            raw_output = out.decode('utf-8')
+            raw_error = err.decode('utf-8')
+
+            logger.debug(f"toeexpand stdout: {repr(raw_output)}")
+            if raw_error:
+                logger.debug(f"toeexpand stderr: {repr(raw_error)}")
+
+            # toeexpand often returns 1 even with valid output
+            if process.returncode != 0:
+                logger.debug(f"toeexpand returned exit code {process.returncode} (often normal)")
+
+            build_info = raw_output.replace('\r', '')
+            logger.debug(f"Cleaned build_info: {repr(build_info)}")
+
+            if not build_info or len(build_info.strip()) < 5:
+                logger.error("toeexpand produced no useful output")
+                return None
+
+            info_split = [line.strip() for line in build_info.split('\n') if line.strip()]
+            logger.debug(f"Filtered info: {info_split}")
+
+            if len(info_split) < 2:
+                logger.error(f"Unexpected toeexpand output format: {info_split}")
+                return None
+
+            version_line = info_split[1]
+            logger.debug(f"Version line: {version_line}")
+            version_number = version_line.split(" ")[-1]
+            build_option = f'TouchDesigner.{version_number}'
+
+            logger.info(f"TOE file requires {build_option}")
+            return build_option
+
+        except Exception as e:
+            logger.error(f"Error running toeexpand: {e}")
+            return None
+
+    def generate_download_url(self, build_option: str) -> Optional[str]:
+        """Generate download URL for a TD version."""
+        try:
+            split_options = build_option.split('.')
+            if len(split_options) < 3:
+                return None
+
+            product = split_options[0]
+            year = split_options[1]
+            build = split_options[2]
+
+            # Platform and architecture-specific file extension
+            if platform.system() == 'Windows':
+                extension = '.exe'
+                arch_suffix = ''
+            else:  # Mac
+                extension = '.dmg'
+                machine = platform.machine().lower()
+                if machine in ['arm64', 'aarch64']:
+                    arch_suffix = '.arm64'
+                elif machine in ['x86_64', 'amd64']:
+                    arch_suffix = '.intel'
+                else:
+                    arch_suffix = '.intel'
+                    logger.warning(f"Unknown Mac architecture '{machine}', defaulting to Intel")
+
+            # Generate URL based on build option and platform
+            if year in ["2017", "2018"] and platform.system() == 'Windows':
+                url = f'https://download.derivative.ca/TouchDesigner099.{year}.{build}.64-Bit{extension}'
+            elif year == "2019" and platform.system() == 'Windows':
+                url = f'https://download.derivative.ca/TouchDesigner099.{year}.{build}{extension}'
+            else:
+                url = f'https://download.derivative.ca/TouchDesigner.{year}.{build}{arch_suffix}{extension}'
+
+            return url
+
+        except Exception as e:
+            logger.error(f"Error generating download URL: {e}")
+            return None
