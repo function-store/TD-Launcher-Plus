@@ -81,7 +81,12 @@ TD Launcher can display project icons next to each file. Enable with the **"Show
 5. Falls back to the TD Launcher app icon
 
 ### Project Info Panel
-Enable **"Show Info"** to display a README panel alongside the file picker. If a `README.md` file exists in the same folder as the selected project, its contents are displayed.
+Enable **"Show Info"** to display an editable README panel alongside the file picker.
+
+- If a `README.md` exists in the project folder, it's loaded for viewing and editing
+- If no README exists, you can create one by typing and clicking **Save**
+- Changes are indicated with an asterisk (*) on the Save button
+- Click **View** to open the README rendered as HTML in your default browser
 
 ### TouchDesigner Utility Component
 A companion TouchDesigner component (`TDLauncherUtility.toe`) is included that integrates with TD Launcher:

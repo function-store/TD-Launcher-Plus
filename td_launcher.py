@@ -70,6 +70,10 @@ class LauncherApp:
         self.td_uri: Optional[str] = None
         self.td_filename: Optional[str] = None
 
+        # Readme state
+        self.current_readme_path: Optional[str] = None
+        self.readme_modified: bool = False
+
     def run(self):
         """Run the application."""
         logger.info(f"TD Launcher {APP_VERSION}")
@@ -451,15 +455,36 @@ class LauncherApp:
         """Build the readme panel."""
         dpg.add_text("Project Info", color=[200, 200, 200, 255])
         dpg.add_separator()
-        dpg.add_text(
-            "Select a file...",
-            tag="readme_status_text",
-            color=[150, 150, 150, 255],
-            wrap=280
-        )
+        with dpg.group(horizontal=True):
+            dpg.add_text(
+                "Select a file...",
+                tag="readme_status_text",
+                color=[150, 150, 150, 255],
+            )
+            dpg.add_button(
+                label="Save",
+                tag="readme_save_button",
+                callback=self._on_save_readme,
+                small=True,
+                show=False
+            )
+            dpg.add_button(
+                label="View",
+                tag="readme_view_button",
+                callback=self._on_view_readme,
+                small=True,
+                show=False
+            )
         dpg.add_separator()
-        with dpg.child_window(width=290, height=400, tag="readme_scroll_area", border=False):
-            dpg.add_text("", tag="readme_content_text", wrap=270, color=[255, 255, 255, 255])
+        dpg.add_input_text(
+            tag="readme_content_text",
+            multiline=True,
+            width=290,
+            height=390,
+            default_value="",
+            callback=self._on_readme_changed,
+            on_enter=False
+        )
 
     def _update_version_panel(self, skip_analysis: bool = False):
         """Update the version panel with selected file info."""
@@ -633,19 +658,202 @@ class LauncherApp:
 
         if self.selected_file and os.path.exists(self.selected_file):
             readme_path = find_readme(self.selected_file)
+            project_dir = os.path.dirname(self.selected_file)
             if readme_path:
-                content = read_readme_content(readme_path)
-                dpg.set_value("readme_status_text", f"File: {os.path.basename(readme_path)}")
+                content = read_readme_content(readme_path, max_length=50000)  # Allow more for editing
+                dpg.set_value("readme_status_text", os.path.basename(readme_path))
                 dpg.configure_item("readme_status_text", color=[100, 255, 100, 255])
                 dpg.set_value("readme_content_text", content)
+                self.current_readme_path = readme_path
             else:
-                dpg.set_value("readme_status_text", "No README found.")
-                dpg.configure_item("readme_status_text", color=[200, 100, 100, 255])
+                # No readme - allow creating one
+                dpg.set_value("readme_status_text", "README.md (new)")
+                dpg.configure_item("readme_status_text", color=[200, 200, 100, 255])
                 dpg.set_value("readme_content_text", "")
+                self.current_readme_path = os.path.join(project_dir, "README.md")
+            dpg.configure_item("readme_save_button", show=True)
+            dpg.configure_item("readme_view_button", show=True)
+            self.readme_modified = False
         else:
             dpg.set_value("readme_status_text", "Select a file...")
             dpg.configure_item("readme_status_text", color=[150, 150, 150, 255])
             dpg.set_value("readme_content_text", "")
+            dpg.configure_item("readme_save_button", show=False)
+            dpg.configure_item("readme_view_button", show=False)
+            self.current_readme_path = None
+            self.readme_modified = False
+
+    def _on_readme_changed(self, sender, app_data):
+        """Handle readme content changes."""
+        self.readme_modified = True
+        if dpg.does_item_exist("readme_save_button"):
+            dpg.configure_item("readme_save_button", label="Save *")
+
+    def _on_save_readme(self, sender, app_data):
+        """Save readme content to file."""
+        if not self.current_readme_path:
+            return
+
+        content = dpg.get_value("readme_content_text")
+        try:
+            with open(self.current_readme_path, 'w', encoding='utf-8') as f:
+                f.write(content)
+            self.readme_modified = False
+            dpg.configure_item("readme_save_button", label="Save")
+            # Update status to show it exists now
+            dpg.set_value("readme_status_text", os.path.basename(self.current_readme_path))
+            dpg.configure_item("readme_status_text", color=[100, 255, 100, 255])
+            logger.info(f"Saved README to {self.current_readme_path}")
+        except Exception as e:
+            logger.error(f"Failed to save README: {e}")
+
+    def _on_view_readme(self, sender, app_data):
+        """View readme rendered as HTML in browser."""
+        import webbrowser
+        import tempfile
+
+        content = dpg.get_value("readme_content_text")
+        if not content.strip():
+            return
+
+        # Get project name for title
+        project_name = "README"
+        if self.selected_file:
+            project_name = os.path.basename(os.path.dirname(self.selected_file))
+
+        # Basic markdown to HTML conversion
+        html_content = self._markdown_to_html(content, project_name)
+
+        # Write to temp file and open
+        try:
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.html', delete=False, encoding='utf-8') as f:
+                f.write(html_content)
+                temp_path = f.name
+            webbrowser.open(f'file://{temp_path}')
+            logger.info(f"Opened README preview: {temp_path}")
+        except Exception as e:
+            logger.error(f"Failed to open README preview: {e}")
+
+    def _markdown_to_html(self, markdown: str, title: str = "README") -> str:
+        """Convert markdown to HTML with styling."""
+        import html
+        import re
+
+        text = markdown
+
+        # Extract and protect code blocks first (before HTML escaping)
+        code_blocks = []
+        def save_code_block(match):
+            lang = match.group(1) or ''
+            code = match.group(2)
+            code_blocks.append((lang, html.escape(code)))
+            return f'___CODE_BLOCK_{len(code_blocks) - 1}___'
+
+        text = re.sub(r'```(\w*)\n(.*?)```', save_code_block, text, flags=re.DOTALL)
+
+        # Extract inline code
+        inline_codes = []
+        def save_inline_code(match):
+            inline_codes.append(html.escape(match.group(1)))
+            return f'___INLINE_CODE_{len(inline_codes) - 1}___'
+
+        text = re.sub(r'`([^`]+)`', save_inline_code, text)
+
+        # Escape HTML in remaining text
+        text = html.escape(text)
+
+        # Convert markdown syntax to HTML
+        # Headers (order matters - longest first)
+        text = re.sub(r'^##### (.+)$', r'<h5>\1</h5>', text, flags=re.MULTILINE)
+        text = re.sub(r'^#### (.+)$', r'<h4>\1</h4>', text, flags=re.MULTILINE)
+        text = re.sub(r'^### (.+)$', r'<h3>\1</h3>', text, flags=re.MULTILINE)
+        text = re.sub(r'^## (.+)$', r'<h2>\1</h2>', text, flags=re.MULTILINE)
+        text = re.sub(r'^# (.+)$', r'<h1>\1</h1>', text, flags=re.MULTILINE)
+
+        # Bold and italic
+        text = re.sub(r'\*\*\*(.+?)\*\*\*', r'<strong><em>\1</em></strong>', text)
+        text = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', text)
+        text = re.sub(r'\*(.+?)\*', r'<em>\1</em>', text)
+
+        # Images (must come before links)
+        text = re.sub(r'!\[([^\]]*)\]\(([^)]+)\)', r'<img src="\2" alt="\1" style="max-width: 100%;">', text)
+
+        # Links
+        text = re.sub(r'\[([^\]]+)\]\(([^)]+)\)', r'<a href="\2">\1</a>', text)
+
+        # Lists
+        text = re.sub(r'^- (.+)$', r'<li>\1</li>', text, flags=re.MULTILINE)
+        text = re.sub(r'(<li>.*</li>\n?)+', r'<ul>\g<0></ul>', text)
+
+        # Horizontal rules
+        text = re.sub(r'^---+$', r'<hr>', text, flags=re.MULTILINE)
+
+        # Paragraphs (convert double newlines)
+        text = re.sub(r'\n\n+', r'</p><p>', text)
+        text = f'<p>{text}</p>'
+
+        # Clean up empty paragraphs
+        text = re.sub(r'<p>\s*</p>', '', text)
+        text = re.sub(r'<p>(<h[1-5]>)', r'\1', text)
+        text = re.sub(r'(</h[1-5]>)</p>', r'\1', text)
+        text = re.sub(r'<p>(<ul>)', r'\1', text)
+        text = re.sub(r'(</ul>)</p>', r'\1', text)
+        text = re.sub(r'<p>(___CODE_BLOCK_)', r'\1', text)
+        text = re.sub(r'(___CODE_BLOCK_\d+___)</p>', r'\1', text)
+        text = re.sub(r'<p>(<hr>)', r'\1', text)
+        text = re.sub(r'(<hr>)</p>', r'\1', text)
+
+        # Restore code blocks
+        for i, (lang, code) in enumerate(code_blocks):
+            lang_class = f' class="language-{lang}"' if lang else ''
+            text = text.replace(f'___CODE_BLOCK_{i}___', f'<pre><code{lang_class}>{code}</code></pre>')
+
+        # Restore inline code
+        for i, code in enumerate(inline_codes):
+            text = text.replace(f'___INLINE_CODE_{i}___', f'<code>{code}</code>')
+
+        return f'''<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>{html.escape(title)}</title>
+    <style>
+        body {{
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+            line-height: 1.6;
+            max-width: 800px;
+            margin: 40px auto;
+            padding: 20px;
+            background: #1a1a1a;
+            color: #e0e0e0;
+        }}
+        h1, h2, h3, h4, h5 {{ color: #4CAF50; margin-top: 24px; }}
+        h1 {{ border-bottom: 1px solid #333; padding-bottom: 10px; }}
+        h4, h5 {{ color: #81C784; }}
+        a {{ color: #64B5F6; }}
+        code {{
+            background: #2d2d2d;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: "SF Mono", Monaco, monospace;
+        }}
+        pre {{
+            background: #2d2d2d;
+            padding: 16px;
+            border-radius: 6px;
+            overflow-x: auto;
+        }}
+        pre code {{ padding: 0; }}
+        ul {{ padding-left: 24px; }}
+        li {{ margin: 4px 0; }}
+        hr {{ border: none; border-top: 1px solid #333; margin: 24px 0; }}
+        strong {{ color: #fff; }}
+    </style>
+</head>
+<body>
+{text}
+</body>
+</html>'''
 
     # =========================================================================
     # Event Handlers
@@ -659,6 +867,10 @@ class LauncherApp:
         """Handle key presses."""
         self._cancel_countdown()
         key_code = app_data
+
+        # Skip navigation shortcuts if typing in readme field
+        if dpg.does_item_exist("readme_content_text") and dpg.is_item_focused("readme_content_text"):
+            return
 
         # Tab - switch tabs
         if key_code == getattr(dpg, 'mvKey_Tab', None):
