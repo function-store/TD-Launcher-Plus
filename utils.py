@@ -166,13 +166,33 @@ def find_project_icon(project_path: str) -> Optional[str]:
         if parts[1].isdigit():
             project_base_no_version = parts[0]
 
-    # First, look for icon.png/jpg/jpeg
+    # 1. icon_{name} (Manual Override)
+    # Check version-stripped first (preferred), then full name
+    names_to_check = []
+    if project_base_no_version != project_base:
+        names_to_check.append(project_base_no_version)
+    names_to_check.append(project_base)
+
+    for name in names_to_check:
+        for ext in ['.png', '.jpg', '.jpeg']:
+            icon_path = os.path.join(project_dir, f'icon_{name}{ext}')
+            if os.path.exists(icon_path):
+                return icon_path
+
+    # 2. icon_temp_{name} (Auto-generated specific)
+    for name in names_to_check:
+        for ext in ['.png', '.jpg', '.jpeg']:
+            icon_path = os.path.join(project_dir, f'icon_temp_{name}{ext}')
+            if os.path.exists(icon_path):
+                return icon_path
+
+    # Second, look for icon.png/jpg/jpeg
     for ext in ['.png', '.jpg', '.jpeg']:
         icon_path = os.path.join(project_dir, f'icon{ext}')
         if os.path.exists(icon_path):
             return icon_path
 
-    # Second, look for icon_temp.png/jpg/jpeg
+    # Third, look for icon_temp.png/jpg/jpeg
     for ext in ['.png', '.jpg', '.jpeg']:
         icon_path = os.path.join(project_dir, f'icon_temp{ext}')
         if os.path.exists(icon_path):
