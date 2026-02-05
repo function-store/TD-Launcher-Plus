@@ -356,7 +356,7 @@ class LauncherApp:
 
                     # Right side - README panel (only when show_readme)
                     if show_readme:
-                        with dpg.child_window(tag="readme_container", width=540, height=510, border=False):
+                        with dpg.child_window(tag="readme_container", width=570, height=510, border=False):
                             dpg.add_text("Project Info", color=[200, 200, 200, 255])
                             dpg.add_separator()
                             dpg.add_text("Select a file...", tag="readme_status_text", color=[150, 150, 150, 255])
