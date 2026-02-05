@@ -151,6 +151,60 @@ class Config:
         """Get list of templates."""
         return self._config.get('templates', [])
 
+    def move_template_up(self, file_path: str) -> bool:
+        """Move a template up in the list (wraps to bottom). Returns True if moved."""
+        abs_path = os.path.abspath(file_path)
+        templates = self._config.get('templates', [])
+
+        # Find the index of the template
+        idx = None
+        for i, t in enumerate(templates):
+            if self._get_path_from_entry(t) == abs_path:
+                idx = i
+                break
+
+        if idx is None:
+            return False
+
+        if idx == 0:
+            # Wrap to bottom: move first item to end
+            item = templates.pop(0)
+            templates.append(item)
+        else:
+            # Swap with previous
+            templates[idx], templates[idx - 1] = templates[idx - 1], templates[idx]
+            
+        self._config['templates'] = templates
+        self.save()
+        return True
+
+    def move_template_down(self, file_path: str) -> bool:
+        """Move a template down in the list (wraps to top). Returns True if moved."""
+        abs_path = os.path.abspath(file_path)
+        templates = self._config.get('templates', [])
+
+        # Find the index of the template
+        idx = None
+        for i, t in enumerate(templates):
+            if self._get_path_from_entry(t) == abs_path:
+                idx = i
+                break
+
+        if idx is None:
+            return False
+
+        if idx >= len(templates) - 1:
+            # Wrap to top: move last item to start
+            item = templates.pop(idx)
+            templates.insert(0, item)
+        else:
+            # Swap with next
+            templates[idx], templates[idx + 1] = templates[idx + 1], templates[idx]
+            
+        self._config['templates'] = templates
+        self.save()
+        return True
+
     # Preferences
 
     @property

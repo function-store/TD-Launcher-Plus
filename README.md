@@ -47,6 +47,37 @@ Launching the app directly opens the project dashboard. Here you can browse your
 ### Alternative Usage
 You can also drag and drop `.toe` files directly onto the TD Launcher Plus app icon.
 
+### TouchDesigner Utility Component (Recommended)
+A companion TouchDesigner component (`TDLauncherPlusUtility.tox`) is included that integrates with TD Launcher Plus. **For best results, add this to your default startup file** so it's always available.
+
+**Why use it?**
+Without this utility, only files launched through TD Launcher Plus appear in the Recent Files list. The utility bridges this gap by notifying the launcher whenever you save a project directly in TouchDesigner.
+
+**Features:**
+- **Sync recent files:** Transmits project data to TD Launcher Plus when you save, so files opened directly in TouchDesigner also appear in Recent Files
+- **Auto-generate icons:** Takes a snapshot of the `/perform` window each time the project is saved, creating `icon_temp.png` for the project thumbnail
+- **Manual icon creation:** Create a custom icon that takes priority over automatic snapshots
+- **Quick access:** Open TD Launcher Plus directly from within TouchDesigner
+
+**Installation:**
+1. Import `TDLauncherPlusUtility.tox` into your project
+2. Or better: Add it to your default startup `.toe` file (or one of the templates ;)) so it's always present --- it is very lightweight and does only minor file operations on init and save.
+3. The utility runs automatically in the background
+
+### Keyboard Shortcuts
+
+**Navigation**
+- **Tab**: Switch between "Recent Files" and "Templates" tabs
+- **Up / W**: Select previous file
+- **Down / S**: Select next file
+- **Enter / Return**: Launch selected project (or start countdown)
+- **Esc**: Quit application
+
+**File Management**
+- **Backspace / Delete**: Remove selected file from the list (with confirmation)
+- **Cmd + Up** (Mac) / **Ctrl + Up** (Win): Move selected template up (Templates tab only)
+- **Cmd + Down** (Mac) / **Ctrl + Down** (Win): Move selected template down (Templates tab only)
+
 ---
 
 ## Features
@@ -74,7 +105,7 @@ Save frequently-used project templates for quick access. Templates appear in a s
 - Remove templates with the **X** button
 
 ### Project Icons
-TD Launcher Plus can display project icons next to each file. Enable with the **"Show Icons"** checkbox.
+TD Launcher Plus can display project icons next to each file. Enable with the **"Show Icons"** checkbox. Icons are automatically generated when you save a project in TouchDesigner using the `TDLauncherPlusUtility.tox` component.
 
 **Icon search order** (first found is used):
 1. `icon.png` / `icon.jpg` / `icon.jpeg` in the project folder
@@ -90,15 +121,6 @@ Enable **"Show Info"** to display an editable README panel alongside the file pi
 - If no README exists, you can create one by typing and clicking **Save**
 - Changes are indicated with an asterisk (*) on the Save button
 - Click **View** to open the README rendered as HTML in your default browser
-
-### TouchDesigner Utility Component
-A companion TouchDesigner component (`TDLauncherUtility.toe`) is included that integrates with TD Launcher Plus:
-
-- **Export project icon:** Automatically exports a thumbnail from your project as `icon_temp.png`
-- **Update recent files:** Notifies TD Launcher Plus when you save, keeping the recent files list current
-- **Quick access:** Open TD Launcher Plus directly from within TouchDesigner
-
-To use: Import `TDLauncherUtility.toe` into your project or add it to your palette.
 
 ---
 

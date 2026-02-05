@@ -599,7 +599,25 @@ class LauncherApp:
                         with dpg.tooltip(dpg.last_item()):
                             dpg.add_text(summary if summary else file_path, wrap=400)
 
-                        # Remove button (moved next to name)
+                        # Up Button
+                        dpg.add_button(
+                            label="^",
+                            tag=f"template_up_{i}",
+                            callback=self._on_move_template_up,
+                            user_data=file_path,
+                            small=True
+                        )
+
+                        # Down Button
+                        dpg.add_button(
+                            label="v",
+                            tag=f"template_down_{i}",
+                            callback=self._on_move_template_down,
+                            user_data=file_path,
+                            small=True
+                        )
+
+                        # Remove button
                         dpg.add_button(
                             label="X",
                             tag=f"remove_template_{i}",
@@ -1320,17 +1338,30 @@ class LauncherApp:
             self._switch_picker_tab()
             return
 
-        # Up/W - move selection up
+        # Check for modifier keys (Cmd on macOS, Ctrl on Windows/Linux)
+        # GLFW key codes: Left Super=343, Right Super=347 (Command key on macOS)
+        modifier_held = (
+            dpg.is_key_down(dpg.mvKey_LControl) or
+            dpg.is_key_down(dpg.mvKey_RControl) or
+            dpg.is_key_down(343) or  # Left Command (macOS)
+            dpg.is_key_down(347)     # Right Command (macOS)
+        )
+
+        # Up/W - move selection up (or reorder template with modifier)
         if key_code in (getattr(dpg, 'mvKey_Up', None), getattr(dpg, 'mvKey_W', None)):
-            if move_versions:
+            if modifier_held and self._get_current_tab() == 'templates' and self.selected_file:
+                self._reorder_template(-1)
+            elif move_versions:
                 self._move_version_selection(-1)
             else:
                 self._move_picker_selection(-1)
             return
 
-        # Down/S - move selection down
+        # Down/S - move selection down (or reorder template with modifier)
         if key_code in (getattr(dpg, 'mvKey_Down', None), getattr(dpg, 'mvKey_S', None)):
-            if move_versions:
+            if modifier_held and self._get_current_tab() == 'templates' and self.selected_file:
+                self._reorder_template(1)
+            elif move_versions:
                 self._move_version_selection(1)
             else:
                 self._move_picker_selection(1)
@@ -1483,6 +1514,36 @@ class LauncherApp:
     def _on_remove_template(self, sender, app_data, user_data):
         """Handle remove template button click."""
         self._confirm_and_remove(user_data, 'template')
+
+    def _on_move_template_up(self, sender, app_data, user_data):
+        """Handle move template up button click."""
+        file_path = user_data
+        if self.config.move_template_up(file_path):
+            self._rebuild_templates_with_selection(file_path)
+
+    def _on_move_template_down(self, sender, app_data, user_data):
+        """Handle move template down button click."""
+        file_path = user_data
+        if self.config.move_template_down(file_path):
+            self._rebuild_templates_with_selection(file_path)
+
+    def _rebuild_templates_with_selection(self, file_path: str):
+        """Rebuild templates list and restore selection to the given file."""
+        # Find the new index
+        templates = self.config.get_templates()
+        abs_path = os.path.abspath(file_path)
+        new_idx = 0
+        for i, t in enumerate(templates):
+            path = t if isinstance(t, str) else t.get('path', '')
+            if os.path.abspath(path) == abs_path:
+                new_idx = i
+                break
+
+        # Update selection index and rebuild
+        self.tab_selection_indices['templates'] = new_idx
+        self.selected_file = file_path
+        self._build_templates_list()
+        self._restore_selection_highlight()
 
     def _on_toggle_icons(self, sender, app_data):
         """Handle show icons toggle."""
@@ -1782,6 +1843,37 @@ class LauncherApp:
             else:
                 # Defer analysis to keep navigation snappy
                 self.deferred_analysis_time = time.time() + 0.150
+
+    def _reorder_template(self, direction: int):
+        """Reorder the selected template up (-1) or down (1)."""
+        if not self.selected_file:
+            return
+
+        # Move the template in the config
+        if direction < 0:
+            moved = self.config.move_template_up(self.selected_file)
+        else:
+            moved = self.config.move_template_down(self.selected_file)
+
+        if moved:
+            # Find new index after move
+            templates = self.config.get_templates()
+            abs_path = os.path.abspath(self.selected_file)
+            new_idx = 0
+            for i, t in enumerate(templates):
+                path = t if isinstance(t, str) else t.get('path', '')
+                if os.path.abspath(path) == abs_path:
+                    new_idx = i
+                    break
+
+            # Update selection index before rebuilding
+            self.tab_selection_indices['templates'] = new_idx
+
+            # Rebuild the list
+            self._build_templates_list()
+
+            # Restore selection highlight
+            self._restore_selection_highlight()
 
     def _restore_selection_highlight(self):
         """Restore visual selection highlight without triggering analysis."""

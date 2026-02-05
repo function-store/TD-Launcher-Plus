@@ -5,7 +5,7 @@ import json
 CustomParHelper: CustomParHelper = next(d for d in me.docked if 'ExtUtils' in d.tags).mod('CustomParHelper').CustomParHelper # import
 ###
 
-class TDLauncherUtilityExt:
+class TDLauncherPlusUtilityExt:
 	def __init__(self, ownerComp):
 		CustomParHelper.Init(self, ownerComp, enable_properties=True, enable_callbacks=True)
 		self.ownerComp = ownerComp
@@ -72,7 +72,7 @@ class TDLauncherUtilityExt:
 		if not self.evalSavetempicon:
 			return
 		
-		self.icon_source.save(f'icon{"_temp" if is_temp else ""}.png', quality = 0.5, metadata=[("source","TDLauncherUtility"), ("project_name", project.name)])
+		self.icon_source.save(f'icon{"_temp" if is_temp else ""}.png', quality = 0.5, metadata=[("source","TDLauncherPlusUtility"), ("project_name", project.name)])
 
 
 	
