@@ -63,7 +63,14 @@ class LauncherApp:
         
         # Track the most recently manually added file in this session
         self.active_manual_file = None
-        
+
+        # Session-only recent files (shown in UI but not persisted until launched)
+        self.session_recent_files: list = []
+
+        # Visible file lists (populated by _build_recent_files_list and _build_templates_list)
+        self.visible_recent_files: list = []
+        self.visible_templates: list = []
+
         self.mono_font = None
         self.active_highlight_tags = set()
         self.last_clicked_path: Optional[str] = None
@@ -104,7 +111,7 @@ class LauncherApp:
             self._analyze_toe_file(self.toe_file)
             self.selected_file = self.toe_file
             self.active_manual_file = self.toe_file  # Set as session active
-            self.config.add_recent_file(self.toe_file)
+            # Note: Don't add to recents here - only when actually launched
         else:
             # Select first recent file by default
             recent = self.config.get_recent_files()
@@ -1664,19 +1671,21 @@ class LauncherApp:
         if file_path:
             self.selected_file = file_path
             self.last_clicked_path = file_path
-            
+
             # Set as active manual file (White)
             self.active_manual_file = file_path
-            
-            # Add to recents immediately
-            self.config.add_recent_file(file_path)
+
+            # Add to session recents (shown in UI but not persisted until launched)
+            abs_path = os.path.abspath(file_path)
+            if abs_path not in self.session_recent_files:
+                self.session_recent_files.insert(0, abs_path)
+
+            # Rebuild list and select the file
             self._build_recent_files_list()
-            
-            # Select the newly added file (which is at top)
             if self.visible_recent_files:
                 self.tab_selection_indices['recent'] = 0
             self._move_picker_selection(0)
-            
+
             self._update_version_panel()
 
     def _on_add_template(self, sender, app_data):

@@ -1,0 +1,122 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          cache: 'pip'
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Install create-dmg
+        run: brew install create-dmg
+
+      - name: Build macOS App and DMG
+        run: |
+          chmod +x BUILD_mac.sh
+          ./BUILD_mac.sh
+
+      - name: Upload macOS DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: td-launcher-plus-macos
+          path: dist/TD_Launcher_Installer.arm64.dmg
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          cache: 'pip'
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Install Inno Setup
+        run: choco install innosetup
+
+      - name: Build Windows Executable
+        run: |
+          pip install pyinstaller
+          pyinstaller --noconfirm --log-level=WARN ^
+            --onefile --nowindow ^
+            --windowed ^
+            --name="td_launcher_plus" ^
+            --icon="td_launcher_plus.ico" ^
+            --add-binary="toeexpand/toeexpand.exe;toeexpand" ^
+            --add-binary="test.toe;." ^
+            --add-binary="toeexpand/iconv.dll;toeexpand" ^
+            --add-binary="toeexpand/icudt59.dll;toeexpand" ^
+            --add-binary="toeexpand/icuuc59.dll;toeexpand" ^
+            --add-binary="toeexpand/libcurl.dll;toeexpand" ^
+            --add-binary="toeexpand/libcurl-x64.dll;toeexpand" ^
+            --add-binary="toeexpand/zlib1.dll;toeexpand" ^
+            .\td_launcher.py
+        shell: cmd
+
+      - name: Compile Inno Setup Installer
+        run: |
+          "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" inno\TD_Launcher_Inno_Compiler.iss
+        shell: cmd
+
+      - name: Upload Windows Installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: td-launcher-plus-windows
+          path: inno/Output/*.exe
+
+  release:
+    needs: [build-macos, build-windows]
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download macOS Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: td-launcher-plus-macos
+          path: release-assets/
+
+      - name: Download Windows Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: td-launcher-plus-windows
+          path: release-assets/
+
+      - name: Copy Utility Component
+        run: |
+          cp modules/release/TDLauncherPlusUtility.tox release-assets/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            release-assets/*.dmg
+            release-assets/*.exe
+            release-assets/*.tox
+          generate_release_notes: true
+          draft: false
+          prerelease: false

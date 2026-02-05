@@ -223,8 +223,8 @@ class Config:
             if self._get_path_from_entry(t) == abs_path:
                 return
 
-        # Add as string path for simplicity
-        templates.append(abs_path)
+        # Add to the top of the list
+        templates.insert(0, abs_path)
 
         self._config['templates'] = templates
         self.save()
