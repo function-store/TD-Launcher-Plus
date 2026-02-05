@@ -274,12 +274,13 @@ def get_project_summary(project_path: str) -> str:
         with open(readme_path, 'r', encoding='utf-8') as f:
             for line in f:
                 line = line.strip()
-                if not line or line.startswith('#'):
+                # Skip headers, lists, quotes, horizontal rules, links etc.
+                if not line or line.startswith(('#', '*', '-', '>', '=', '[', '```', '!')):
                     continue
-                # Found the first non-empty, non-title line
+                # Found the first non-empty, non-markdown-symbol line
                 # Truncate if it's exceptionally long
-                if len(line) > 500:
-                    line = line[:497] + "..."
+                if len(line) > 250:
+                    line = line[:247] + "..."
                 return line
     except Exception:
         pass

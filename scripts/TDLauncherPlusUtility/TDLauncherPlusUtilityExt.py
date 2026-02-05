@@ -1,6 +1,7 @@
 import os
 import platform
 import json
+import time
 
 CustomParHelper: CustomParHelper = next(d for d in me.docked if 'ExtUtils' in d.tags).mod('CustomParHelper').CustomParHelper # import
 ###
@@ -50,8 +51,9 @@ class TDLauncherPlusUtilityExt:
 		path = self.getConfigPath()
 		config = self.loadConfig()
 		
-		# Update property
-		config['recent_files'] = recents
+		# Update property - use 'td_recents' to avoid overwriting launcher's local history
+		config['td_recents'] = recents
+		config['td_recents_timestamp'] = time.time()
 		
 		# Ensure dir exists
 		os.makedirs(os.path.dirname(path), exist_ok=True)

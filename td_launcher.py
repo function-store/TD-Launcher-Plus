@@ -55,12 +55,15 @@ class LauncherApp:
 
         # UI state
         self.picker_mode = toe_file is None
+        self.countdown_start_time = 0
+        self.countdown_duration = 3.0
         self.countdown_enabled = False
-        self.seconds_started = 0.0
-        self.download_progress = 0.0
-
-        # Selection tracking
-        self.last_click_time = 0.0
+        
+        # Track the most recently manually added file in this session
+        self.active_manual_file = None
+        
+        self.mono_font = None
+        self.active_highlight_tags = set()
         self.last_clicked_path: Optional[str] = None
         self.tab_selection_indices = {'recent': -1, 'templates': -1}
         self.selection_focus = 'versions' if toe_file else 'picker'
@@ -98,6 +101,7 @@ class LauncherApp:
         if self.toe_file:
             self._analyze_toe_file(self.toe_file)
             self.selected_file = self.toe_file
+            self.active_manual_file = self.toe_file  # Set as session active
             self.config.add_recent_file(self.toe_file)
         else:
             # Select first recent file by default
@@ -143,7 +147,7 @@ class LauncherApp:
         dpg.create_viewport(
             title=f'TD Launcher Plus',
             width=info_width,
-            height=650,
+            height=666,
             resizable=True
         )
         dpg.setup_dearpygui()
@@ -263,6 +267,25 @@ class LauncherApp:
         with dpg.window(tag="Primary Window", no_scrollbar=True, no_move=True):
             dpg.add_text(f'TD Launcher Plus {APP_VERSION}', color=[50, 255, 0, 255])
             dpg.add_separator()
+            
+            # Create global theme for launcher-sourced recent items (Green)
+            if not dpg.does_item_exist("launcher_item_theme"):
+                with dpg.theme(tag="launcher_item_theme"):
+                    with dpg.theme_component(dpg.mvAll):
+                        dpg.add_theme_color(dpg.mvThemeCol_Text, [200, 255, 200, 255], category=dpg.mvThemeCat_Core)
+
+            # Vibrant Green for the absolute active session file
+            if not dpg.does_item_exist("active_item_theme"):
+                with dpg.theme(tag="active_item_theme"):
+                    with dpg.theme_component(dpg.mvAll):
+                        dpg.add_theme_color(dpg.mvThemeCol_Text, [50, 255, 50, 255], category=dpg.mvThemeCat_Core)
+
+            # Create global theme for TD-synced recent items (Yellow)
+            if not dpg.does_item_exist("td_item_theme"):
+                with dpg.theme(tag="td_item_theme"):
+                    with dpg.theme_component(dpg.mvAll):
+                        # Pleasant soft yellow
+                        dpg.add_theme_color(dpg.mvThemeCol_Text, [255, 255, 200, 255], category=dpg.mvThemeCat_Core)
 
             # Always use same structure - just hide readme elements when not needed
             with dpg.group(tag="main_ui_group"):
@@ -274,6 +297,16 @@ class LauncherApp:
                 # Controls row
                 with dpg.group(horizontal=True):
                     dpg.add_button(label="Browse...", tag="browse_btn_recent", callback=self._on_browse)
+                    
+                    dpg.add_checkbox(
+                        label="Full History", 
+                        tag="show_full_history_checkbox", 
+                        default_value=self.config.show_full_history, 
+                        callback=self._on_toggle_full_history
+                    )
+                    with dpg.tooltip("show_full_history_checkbox"):
+                        dpg.add_text("Show merged history including TD app recent files extracted by TDLauncherPlusUtility.tox when included in a project (Yellow).\nUncheck to see only manually opened files (Green).")
+                    
                     dpg.add_checkbox(label="Show Icons", tag="show_icons_checkbox", default_value=show_icons, callback=self._on_toggle_icons)
                     dpg.add_checkbox(label="Show Info", tag="show_readme_checkbox", default_value=show_readme, callback=self._on_toggle_readme)
 
@@ -433,8 +466,28 @@ class LauncherApp:
         if dpg.does_item_exist("recent_files_list"):
             dpg.delete_item("recent_files_list", children_only=True)
 
+
         self.visible_recent_files = []
-        recent_files = self.config.get_recent_files()
+        # Pass the merge flag based on config
+        recent_files = self.config.get_recent_files(merged=self.config.show_full_history)
+        
+        # Ensure active_manual_file is at the very top if it exists
+        if self.active_manual_file:
+            abs_active = os.path.abspath(self.active_manual_file)
+            active_index = -1
+            for idx, rf in enumerate(recent_files):
+                if os.path.abspath(self.config._get_path_from_entry(rf)) == abs_active:
+                    active_index = idx
+                    break
+            
+            if active_index > 0:
+                # Move to top
+                active_item = recent_files.pop(active_index)
+                recent_files.insert(0, active_item)
+            elif active_index == -1:
+                # If not in list (e.g. filtered out), add it
+                recent_files.insert(0, {'path': abs_active, 'source': 'launcher', 'last_opened': time.time()})
+
         show_icons = self.config.show_icons
 
         if not recent_files:
@@ -447,6 +500,28 @@ class LauncherApp:
 
         display_index = 0
         shown_paths = set()  # Track paths we've already displayed
+
+        # 1. First pass: Calculate max display name width
+        max_chars = 20 # Minimum base
+        for rf in recent_files:
+            file_path = rf if isinstance(rf, str) else rf.get('path', '')
+            file_path = file_path.strip() if file_path else ''
+            filename = os.path.basename(file_path)
+            parent_folder = os.path.basename(os.path.dirname(file_path))
+            
+            d_name = filename
+            if self._is_versioned_toe(filename):
+                if parent_folder.lower() == 'backup':
+                    d_name = f"Backup/{filename}"
+                else:
+                    base = filename[:-4]
+                    base_no_version = base.rsplit('.', 1)[0]
+                    d_name = f"{base_no_version}.toe"
+            max_chars = max(max_chars, len(d_name))
+        
+        # Pixels approx: width = chars * multiplier
+        # Using 9 as a safe bet for the default font
+        calculated_width = max(200, (max_chars * 9) + 20)
 
         for rf in recent_files:
             # Handle both string paths and dict entries
@@ -482,6 +557,9 @@ class LauncherApp:
             i = display_index
             display_index += 1
 
+            # Determine source for styling
+            source = rf.get('source', 'legacy') if isinstance(rf, dict) else 'legacy'
+            
             with dpg.group(horizontal=True, parent="recent_files_list", tag=f"recent_row_{i}"):
                 # Icon
                 if show_icons:
@@ -501,13 +579,33 @@ class LauncherApp:
                         dpg.add_spacer(height=15)
                     with dpg.group(horizontal=True):
                         # Filename (selectable)
+                        # Filename (selectable)
                         dpg.add_selectable(
                             label=display_name,
                             tag=f"recent_file_{i}",
                             callback=self._on_file_selected,
                             user_data={'path': file_path, 'type': 'recent'},
-                            width=200
+                            width=calculated_width
                         )
+                        
+                        # Apply custom text color based on source
+                        # Normalize paths for comparison
+                        abs_file_path = os.path.abspath(file_path) if file_path else ""
+                        abs_active_path = os.path.abspath(self.active_manual_file) if self.active_manual_file else ""
+                        
+                        is_active_session = (abs_file_path == abs_active_path)
+                        
+                        if is_active_session:
+                            # Use vibrant theme for active session file
+                            if dpg.does_item_exist("active_item_theme"):
+                                dpg.bind_item_theme(f"recent_file_{i}", "active_item_theme")
+                        elif source == 'launcher':
+                            if dpg.does_item_exist("launcher_item_theme"):
+                                dpg.bind_item_theme(f"recent_file_{i}", "launcher_item_theme")
+                        elif source == 'td':
+                            if dpg.does_item_exist("td_item_theme"):
+                                dpg.bind_item_theme(f"recent_file_{i}", "td_item_theme")
+                        
                         summary = get_project_summary(file_path)
                         with dpg.tooltip(dpg.last_item()):
                             dpg.add_text(summary if summary else file_path, wrap=400)
@@ -561,6 +659,15 @@ class LauncherApp:
             )
             return
 
+        # 1. First pass: Calculate max name width
+        max_chars = 22 # Minimum base
+        for t in templates:
+            name = os.path.basename(t) if isinstance(t, str) else t.get('name', os.path.basename(t.get('path', '')))
+            max_chars = max(max_chars, len(name))
+        
+        # Consistent multiplier
+        calculated_width = max(200, (max_chars * 9) + 20)
+
         for i, t in enumerate(templates):
             # Handle both string paths and dict entries
             file_path = t if isinstance(t, str) else t.get('path', '')
@@ -593,7 +700,7 @@ class LauncherApp:
                             tag=f"template_{i}",
                             callback=self._on_file_selected,
                             user_data={'path': file_path, 'type': 'template'},
-                            width=220
+                            width=calculated_width
                         )
                         summary = get_project_summary(file_path)
                         with dpg.tooltip(dpg.last_item()):
@@ -655,7 +762,7 @@ class LauncherApp:
             label="Select a file to launch",
             tag="launch_button",
             width=-1,
-            height=40,
+            height=60,
             callback=self._on_launch,
             enabled=False
         )
@@ -799,7 +906,8 @@ class LauncherApp:
             # Still show version selection
             version_keys = self.td_manager.get_sorted_version_keys()
             if version_keys:
-                with dpg.child_window(height=100, width=-1, parent="version_panel", tag="td_version_container"):
+                # Default taller height (180) when no missing version warning is present
+                with dpg.child_window(height=180, width=-1, parent="version_panel", tag="td_version_container"):
                     dpg.add_radio_button(
                         version_keys,
                         default_value=version_keys[-1],  # Most recent version
@@ -846,7 +954,6 @@ class LauncherApp:
             # Maintain current countdown state instead of forcing True
 
         dpg.add_separator(parent="version_panel")
-        dpg.add_text("Override version:", parent="version_panel", color=[150, 150, 150, 255])
 
         # Version selection
         version_keys = self.td_manager.get_sorted_version_keys()
@@ -854,7 +961,9 @@ class LauncherApp:
             version_keys[0] if version_keys else None
         )
 
-        with dpg.child_window(height=150, width=-1, parent="version_panel", tag="td_version_container"):
+        # Dynamic height based on download button presence (Installed: 180, Missing: 100)
+        container_height = 150 if version_installed else 123
+        with dpg.child_window(height=container_height, width=-1, parent="version_panel", tag="td_version_container"):
             dpg.add_radio_button(
                 version_keys,
                 default_value=default_version,
@@ -1294,6 +1403,7 @@ class LauncherApp:
         tab_tag = dpg.get_item_alias(tab_id) if isinstance(tab_id, int) else tab_id
         
         # In grid mode, we need to toggle list visibility and button labels
+        # In grid mode, we need to toggle list visibility and button labels
         if tab_tag == "recent_files_tab":
             if dpg.does_item_exist("recent_files_list"):
                 dpg.configure_item("recent_files_list", show=True)
@@ -1301,6 +1411,9 @@ class LauncherApp:
                 dpg.configure_item("templates_list", show=False)
             if dpg.does_item_exist("browse_btn_recent"):
                 dpg.configure_item("browse_btn_recent", label="Browse...", callback=self._on_browse)
+            if dpg.does_item_exist("show_full_history_checkbox"):
+                dpg.configure_item("show_full_history_checkbox", show=True)
+                
         elif tab_tag == "templates_tab":
             if dpg.does_item_exist("recent_files_list"):
                 dpg.configure_item("recent_files_list", show=False)
@@ -1308,6 +1421,8 @@ class LauncherApp:
                 dpg.configure_item("templates_list", show=True)
             if dpg.does_item_exist("browse_btn_recent"):
                 dpg.configure_item("browse_btn_recent", label="Add Templates...", callback=self._on_add_template)
+            if dpg.does_item_exist("show_full_history_checkbox"):
+                dpg.configure_item("show_full_history_checkbox", show=False)
 
         # Restore selection for the newly active tab
         self.selection_focus = 'picker'
@@ -1320,6 +1435,12 @@ class LauncherApp:
             
             # Refresh visual state and loading
             self._move_picker_selection(0)
+
+    def _on_toggle_full_history(self, sender, app_data, user_data):
+        """Handle toggle of full history checkbox."""
+        self.config.show_full_history = app_data
+        self._build_recent_files_list()
+        self._restore_selection_highlight()
 
     def _on_key_press(self, sender, app_data):
         """Handle key presses."""
@@ -1497,6 +1618,19 @@ class LauncherApp:
         if file_path:
             self.selected_file = file_path
             self.last_clicked_path = file_path
+            
+            # Set as active manual file (White)
+            self.active_manual_file = file_path
+            
+            # Add to recents immediately
+            self.config.add_recent_file(file_path)
+            self._build_recent_files_list()
+            
+            # Select the newly added file (which is at top)
+            if self.visible_recent_files:
+                self.tab_selection_indices['recent'] = 0
+            self._move_picker_selection(0)
+            
             self._update_version_panel()
 
     def _on_add_template(self, sender, app_data):
@@ -1613,6 +1747,7 @@ class LauncherApp:
             return
 
         self.config.add_recent_file(self.selected_file)
+        self.active_manual_file = self.selected_file  # Set as session active
         self._build_recent_files_list()
 
         # Get selected version

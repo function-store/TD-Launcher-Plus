@@ -52,6 +52,11 @@ class Config:
             if os.path.exists(self._config_file):
                 with open(self._config_file, 'r', encoding='utf-8') as f:
                     loaded = json.load(f)
+                    
+                    # Migration: "recent_files" -> "launcher_recents"
+                    if 'recent_files' in loaded and 'launcher_recents' not in loaded:
+                        loaded['launcher_recents'] = loaded.pop('recent_files')
+                    
                     # Merge with defaults to ensure all keys exist
                     self._config = {**DEFAULT_CONFIG, **loaded}
             else:
@@ -92,33 +97,114 @@ class Config:
         return entry if isinstance(entry, str) else entry.get('path', '')
 
     def add_recent_file(self, file_path: str) -> None:
-        """Add a file to recent files list."""
+        """Add a file to launcher recent files list."""
         abs_path = os.path.abspath(file_path)
-        recent_files = self._config.get('recent_files', [])
+        # Use launcher_recents instead of generic recent_files
+        recent_files = self._config.get('launcher_recents', [])
 
         # Remove if already exists (handle both string and dict entries)
         recent_files = [rf for rf in recent_files if self._get_path_from_entry(rf) != abs_path]
 
-        # Add to front (as string path for simplicity)
-        recent_files.insert(0, abs_path)
+        # Add to top with source info
+        entry = {
+            'path': abs_path,
+            'source': 'launcher',
+            'last_opened': time.time()
+        }
+        recent_files.insert(0, entry)
 
-        # Trim to max
-        max_files = self._config.get('max_recent_files', 20)
-        self._config['recent_files'] = recent_files[:max_files]
+        # Limit size
+        max_recent = self._config.get('max_recent_files', 20)
+        self._config['launcher_recents'] = recent_files[:max_recent]
         self.save()
 
     def remove_recent_file(self, file_path: str) -> None:
-        """Remove a file from recent files list."""
+        """Remove a file from recent files list (removes from both lists)."""
         abs_path = os.path.abspath(file_path)
-        recent_files = self._config.get('recent_files', [])
-        self._config['recent_files'] = [
-            rf for rf in recent_files if self._get_path_from_entry(rf) != abs_path
+        
+        # Remove from Launcher list
+        launcher_recents = self._config.get('launcher_recents', [])
+        self._config['launcher_recents'] = [
+            rf for rf in launcher_recents 
+            if self._get_path_from_entry(rf) != abs_path
         ]
+        
+        # Remove from TD list
+        td_recents = self._config.get('td_recents', [])
+        self._config['td_recents'] = [
+            rf for rf in td_recents 
+            if self._get_path_from_entry(rf) != abs_path
+        ]
+        
         self.save()
 
-    def get_recent_files(self) -> list:
-        """Get list of recent files."""
-        return self._config.get('recent_files', [])
+    def get_recent_files(self, merged: bool = True) -> list:
+        """Get processed recent files list.
+        
+        Args:
+            merged: If True, returns merged list of Launcher + TD recents (sorted by date).
+                    If False, returns only Launcher recents.
+        """
+        launcher_recents = self._config.get('launcher_recents', [])
+        
+        if not merged:
+            return launcher_recents
+            
+        td_recents = self._config.get('td_recents', [])
+        
+        # Combine and deduplicate
+        seen_paths = set()
+        merged_list = []
+        
+        # Add Launcher recents first
+        for item in launcher_recents:
+            path = self._get_path_from_entry(item)
+            if path and path not in seen_paths:
+                # Use stored source if available, otherwise default to legacy (td/white)
+                # We do NOT force 'launcher' here anymore, so legacy strings stay white
+                entry = item if isinstance(item, dict) else {'path': path, 'last_opened': 0}
+                merged_list.append(entry)
+                seen_paths.add(path)
+                
+        # Add TD recents
+        for item in td_recents:
+            path = self._get_path_from_entry(item)
+            if path and path not in seen_paths:
+                entry = item if isinstance(item, dict) else {'path': path, 'last_opened': 0}
+                entry['source'] = 'td'
+                merged_list.append(entry)
+                seen_paths.add(path)
+        
+        # Sort by interaction time (last_opened) or modification time
+        def get_sort_time(item):
+            path = self._get_path_from_entry(item)
+            
+            # If we have a stored interaction time (from Launcher), use it
+            if isinstance(item, dict) and item.get('last_opened'):
+                return float(item['last_opened'])
+            
+            # Fallback to file modification time (mostly for TD synced files)
+            try:
+                if os.path.exists(path):
+                    return os.path.getmtime(path)
+            except OSError:
+                pass
+            return 0
+            
+        merged_list.sort(key=get_sort_time, reverse=True)
+                
+        return merged_list
+
+    # Preferences
+
+    @property
+    def show_full_history(self) -> bool:
+        return self._config.get('show_full_history', True)
+
+    @show_full_history.setter
+    def show_full_history(self, value: bool) -> None:
+        self._config['show_full_history'] = value
+        self.save()
 
     # Templates management
 
