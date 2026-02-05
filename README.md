@@ -1,5 +1,5 @@
-# TD Launcher
-A focused project dashboard for TouchDesigner. Manage your library, view documentation, and launch .toe files with the correct version automatically.
+# TD Launcher Plus
+A focused project dashboard for TouchDesigner. Launch .toe files with the correct version automatically, open recent project files, or custom template projects (startup files). With optional icon preview, and project documentation viewer and editor.
 
 ### Key Features:
 - **Version Detection:** Automatically finds the right TD build for any `.toe` file.
@@ -15,11 +15,19 @@ A focused project dashboard for TouchDesigner. Manage your library, view documen
 If you work on a lot of TouchDesigner projects, or maintain a library of legacy work, you know the frustration of managing multiple concurrent installations. Guessing which version a project requires—or worse, accidentally upgrading a project and losing work—is a constant risk.
 
 ## How this works
-This tool scans your computer when launched for TouchDesigner entries, and builds a list of available TD executable paths that can potentially be used. It then analyzes the .toe file and loads the GUI with the appropriate option selected, and starts a 5 second timer.
 
-If you interupt it by clicking anywhere, you can choose a different version or cancel. If you leave it undisturbed, it will launch after 5 sec in the detected version.
+TD Launcher operates in two primary modes depending on how it's opened:
 
-If the required version of Touch is not found, the launcher will not launch anything automatically, and will wait for your input with the required build highlighted in red.
+### 1. Automatic Launch Mode
+When you open a `.toe` file with TD Launcher (via double-click or drag-and-drop), it instantly analyzes the file to find the required TouchDesigner version. It then presents a 5-second countdown timer.
+- **Auto-launch:** If left undisturbed, the project opens in the detected version automatically.
+- **Interruption:** Clicking anywhere or pressing a key stops the timer, allowing you to manually override the TD version or view project notes.
+
+### 2. Dashboard Mode (Project Manager)
+Launching the app directly opens the project dashboard. Here you can browse your **Recent Files** and **Templates** library. 
+- **Smart Discovery:** The tool scans your system for all installed TouchDesigner versions and presents them as options.
+- **Integrated Docs:** Selecting a project instantly loads its project info and README.md (if present) into the side panel. 
+- **Keyboard Workflow:** Designed for speed with full keyboard navigation, tab memory, and debounced analysis for a smooth browsing experience.
 
 ## How to use
 
@@ -241,6 +249,12 @@ TD Launcher uses TouchDesigner's `toeexpand` utility to analyze `.toe` files and
 ```
 
 This approach ensures optimal compatibility on each platform while maintaining the core functionality of version detection.
+
+# Contributors
+
+- (Lucas Morgan)[https://www.enviral-design.com/] - original TD Launcher with version picker
+- (Dan Molnar / Function Store)[https://functionstore.xyz/link-in-bio](Cross platform implementation and "Plus" version including recent files, templates, icons, readme, utility
+- (Keith Lostracco)[https://github.com/keithlostracco] - Daily build signature support
 
 ---
 

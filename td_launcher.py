@@ -63,6 +63,7 @@ class LauncherApp:
         self.tab_selection_indices = {'recent': -1, 'templates': -1}
         self.visible_recent_files = []
         self.visible_templates = []
+        self.selection_focus = 'versions' if toe_file else 'picker'
         self.deferred_analysis_time = 0.0
 
         # Icon cache
@@ -434,7 +435,7 @@ class LauncherApp:
             i = display_index
             display_index += 1
 
-            with dpg.group(horizontal=True, parent="recent_files_list"):
+            with dpg.group(horizontal=True, parent="recent_files_list", tag=f"recent_row_{i}"):
                 # Icon
                 if show_icons:
                     icon_path = find_project_icon(file_path) if exists else None
@@ -450,7 +451,7 @@ class LauncherApp:
                 # Content group for vertical centering
                 with dpg.group():
                     if show_icons:
-                        dpg.add_spacer(height=11)
+                        dpg.add_spacer(height=15)
                     with dpg.group(horizontal=True):
                         # Filename (selectable)
                         dpg.add_selectable(
@@ -521,7 +522,7 @@ class LauncherApp:
             exists = os.path.exists(file_path)
             modified = format_file_modified_time(file_path) if exists else ""
 
-            with dpg.group(horizontal=True, parent="templates_list"):
+            with dpg.group(horizontal=True, parent="templates_list", tag=f"template_row_{i}"):
                 # Icon
                 if show_icons:
                     icon_path = find_project_icon(file_path) if exists else None
@@ -537,7 +538,7 @@ class LauncherApp:
                 # Content group for vertical centering
                 with dpg.group():
                     if show_icons:
-                        dpg.add_spacer(height=11)
+                        dpg.add_spacer(height=15)
                     with dpg.group(horizontal=True):
                         # Name (selectable)
                         dpg.add_selectable(
@@ -721,12 +722,13 @@ class LauncherApp:
             # Still show version selection
             version_keys = self.td_manager.get_sorted_version_keys()
             if version_keys:
-                with dpg.child_window(height=100, width=-1, parent="version_panel"):
+                with dpg.child_window(height=100, width=-1, parent="version_panel", tag="td_version_container"):
                     dpg.add_radio_button(
                         version_keys,
                         default_value=version_keys[-1],  # Most recent version
                         tag="td_version",
-                        horizontal=False
+                        horizontal=False,
+                        callback=self._on_version_selected
                     )
                 if dpg.does_item_exist("launch_button"):
                     filename = os.path.basename(self.selected_file)
@@ -775,12 +777,13 @@ class LauncherApp:
             version_keys[0] if version_keys else None
         )
 
-        with dpg.child_window(height=100, width=-1, parent="version_panel"):
+        with dpg.child_window(height=100, width=-1, parent="version_panel", tag="td_version_container"):
             dpg.add_radio_button(
                 version_keys,
                 default_value=default_version,
                 tag="td_version",
-                horizontal=False
+                horizontal=False,
+                callback=self._on_version_selected
             )
 
         # Update launch button
@@ -790,6 +793,11 @@ class LauncherApp:
 
         # Update readme panel
         self._update_readme_panel()
+
+    def _on_version_selected(self, sender, app_data):
+        """Handle version radio button selection."""
+        self.selection_focus = 'versions'
+        # Can add logic here if we want to preview version changes
 
     def _rebuild_version_panel_ui(self):
         """Rebuild version panel UI without re-analyzing the file."""
@@ -886,7 +894,7 @@ class LauncherApp:
         new_h = max(390, num_lines * 26 + 20)
         dpg.configure_item("readme_content_text", height=new_h)
 
-    def _wrap_content_with_gutter(self, text: str, width: int = 45):
+    def _wrap_content_with_gutter(self, text: str, width: int = 65):
         """Wrap text into content and gutter strings using indentation."""
         if not text:
             return "", ""
@@ -945,7 +953,13 @@ class LauncherApp:
                 content = read_readme_content(readme_path, max_length=50000)  # Allow more for editing
                 
                 if self.readme_wrapped:
-                    gutter, display_content = self._wrap_content_with_gutter(content, width=45)
+                    # Calculate dynamic width based on viewport
+                    vp_width = dpg.get_viewport_width()
+                    # Approx 560px for picker side, subtract padding. 
+                    # For a 1190 width, readme gets ~600px. 
+                    # 10px per char approx for mono font. 
+                    dynamic_width = max(30, int((vp_width - 630) / 9))
+                    gutter, display_content = self._wrap_content_with_gutter(content, width=dynamic_width)
                 else:
                     gutter = '\n'.join([f"{i+1:>3} " for i in range(content.count('\n') + 1)])
                     display_content = content
@@ -1219,6 +1233,7 @@ class LauncherApp:
                 dpg.configure_item("browse_btn_recent", label="Add Template...", callback=self._on_add_template)
 
         # Restore selection for the newly active tab
+        self.selection_focus = 'picker'
         current_tab = 'recent' if tab_tag == "recent_files_tab" else 'templates'
         items = self.visible_recent_files if current_tab == 'recent' else self.visible_templates
         if items:
@@ -1237,6 +1252,9 @@ class LauncherApp:
         # Skip navigation shortcuts if typing in readme field
         if dpg.does_item_exist("readme_content_text") and dpg.is_item_focused("readme_content_text"):
             return
+            
+        # Determing if we should move versions or file picker
+        move_versions = (self.selection_focus == 'versions')
 
         # Tab - switch tabs
         if key_code == getattr(dpg, 'mvKey_Tab', None):
@@ -1245,12 +1263,18 @@ class LauncherApp:
 
         # Up/W - move selection up
         if key_code in (getattr(dpg, 'mvKey_Up', None), getattr(dpg, 'mvKey_W', None)):
-            self._move_picker_selection(-1)
+            if move_versions:
+                self._move_version_selection(-1)
+            else:
+                self._move_picker_selection(-1)
             return
 
         # Down/S - move selection down
         if key_code in (getattr(dpg, 'mvKey_Down', None), getattr(dpg, 'mvKey_S', None)):
-            self._move_picker_selection(1)
+            if move_versions:
+                self._move_version_selection(1)
+            else:
+                self._move_picker_selection(1)
             return
 
         # Enter - launch
@@ -1332,6 +1356,9 @@ class LauncherApp:
         file_path = user_data.get('path', '')
         current_time = time.time()
 
+        # Sync logical focus to picker
+        self.selection_focus = 'picker'
+        
         # Clear all selections
         self._clear_all_selections()
         if sender and dpg.does_item_exist(sender):
@@ -1648,6 +1675,25 @@ class LauncherApp:
         tag = f"{prefix}{self.tab_selection_indices[current_tab]}"
         if dpg.does_item_exist(tag):
             dpg.set_value(tag, True)
+            
+            # Scroll to selection
+            container = "recent_files_list" if current_tab == 'recent' else "templates_list"
+            if dpg.does_item_exist(container):
+                # Precise row heights based on DPG metrics:
+                # With icons: Image(50) + vertical spacing(4) + potential header overhead + container padding
+                # Standard DPG row in this layout with 50px icon ends up ~68-72px including spacing.
+                row_h = 68 if self.config.show_icons else 32
+                target_y = self.tab_selection_indices[current_tab] * row_h
+                
+                curr_scroll = dpg.get_y_scroll(container)
+                page_h = 150 # Visible area height
+                
+                # If we're moving Up and selection is above the fold
+                if target_y < curr_scroll:
+                    dpg.set_y_scroll(container, max(0, target_y - 4)) 
+                # If we're moving Down and selection is below the fold
+                elif target_y + row_h > curr_scroll + page_h:
+                    dpg.set_y_scroll(container, target_y + row_h - page_h + 4)
 
         # Update selected file
         item = items[self.tab_selection_indices[current_tab]]
@@ -1662,6 +1708,37 @@ class LauncherApp:
             else:
                 # Defer analysis to keep navigation snappy
                 self.deferred_analysis_time = time.time() + 0.150
+
+    def _move_version_selection(self, step: int):
+        """Move version selection up or down."""
+        if not dpg.does_item_exist("td_version"):
+            return
+            
+        version_keys = self.td_manager.get_sorted_version_keys()
+        if not version_keys:
+            return
+            
+        current_version = dpg.get_value("td_version")
+        try:
+            # Keys are sorted, so we can find index
+            current_idx = version_keys.index(current_version)
+        except ValueError:
+            current_idx = 0
+            
+        new_idx = (current_idx + step) % len(version_keys)
+        dpg.set_value("td_version", version_keys[new_idx])
+        
+        # Scroll to selection
+        if dpg.does_item_exist("td_version_container"):
+            row_h = 22 # Standard radio row height
+            target_y = new_idx * row_h
+            curr_scroll = dpg.get_y_scroll("td_version_container")
+            page_h = 100 # Height as defined in _update_version_panel
+            
+            if target_y < curr_scroll:
+                dpg.set_y_scroll("td_version_container", target_y)
+            elif target_y + row_h > curr_scroll + page_h:
+                dpg.set_y_scroll("td_version_container", target_y + row_h - page_h)
 
     def _get_current_tab(self) -> str:
         """Get the current picker tab."""
