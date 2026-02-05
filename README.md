@@ -1,18 +1,26 @@
 # TD Launcher Plus
 A focused project dashboard for TouchDesigner. Launch .toe files with the correct version automatically, open recent project files, or custom template projects (startup files). With optional icon preview, and project documentation viewer and editor.
 
-### Key Features:
-- **Version Detection:** Automatically finds the right TD build for any `.toe` file.
-- **Unified Grid:** A clean layout with split project/info views.
-- **Tab Memory:** Remembers your selection when switching between Recent Files and Templates.
-- **Docs Editor:** Built-in README panel for project documentation.
-- **Cross-Platform:** Works on macOS and Windows.
+This repo is based on (TD Launcher by EnviralDesign)[https://github.com/enviraldesign/TD-Launcher] (MIT License).
+
+![image](./docs/TDLauncherPlus_recents.png)
+
+### Key Features
+- **Smart Version Detection**: Automatically identifies and launches the required TouchDesigner build for any `.toe` file.
+- **Project Dashboard**: Quick-access hubs for **Recent Files** and **Templates** with persistent memory.
+- **Integrated Documentation**: View and edit project `README.md` files directly within the launcher.
+- **Visual Previews**: Automatic thumbnail generation and custom icon support for a rich browsing experience.
+- **Keyboard Navigation**: Full keyboard navigation with tab memory for fast and fluid workflow.
+- **Native Experience**: Fully optimized for macOS (Apple Silicon/Intel) and Windows with a clean, responsive Dear PyGui interface.
+- **Sync Utility**: Companion component for TouchDesigner to keep your history updated and icons generated.
 
 ---
 
 ## What's this for
 
-If you work on a lot of TouchDesigner projects, or maintain a library of legacy work, you know the frustration of managing multiple concurrent installations. Guessing which version a project requires—or worse, accidentally upgrading a project and losing work—is a constant risk.
+TD Launcher Plus is a project manager for TouchDesigner that helps you keep track of your projects and launch them with the correct version automatically. It also includes a built-in documentation viewer and editor, so you can keep your project notes up to date.
+
+It can serve as a go-to dashboard for your TouchDesigner projects, whether you're working on a single project or many. It can also be used as a quick way to launch TD with a specific version, or to open a specific project.
 
 ## How this works
 
@@ -274,7 +282,7 @@ This approach ensures optimal compatibility on each platform while maintaining t
 
 # Contributors
 
-- (Lucas Morgan)[https://www.enviral-design.com/] - original TD Launcher Plus with version picker
+- (Lucas Morgan)[https://www.enviral-design.com/] - original TD Launcher with version picker
 - (Dan Molnar / Function Store)[https://functionstore.xyz/link-in-bio](Cross platform implementation and "Plus" version including recent files, templates, icons, readme, utility
 - (Keith Lostracco)[https://github.com/keithlostracco] - Daily build signature support
 

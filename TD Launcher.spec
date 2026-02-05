@@ -49,7 +49,7 @@ app = BUNDLE(
     coll,
     name='TD Launcher Plus.app',
     icon='td_launcher.icns',
-    bundle_identifier='com.enviral-design.td-launcher',
+    bundle_identifier='com.function-store.td-launcher-plus',
     info_plist={
         'CFBundleDocumentTypes': [
             {

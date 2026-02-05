@@ -8,6 +8,7 @@ import platform
 import subprocess
 import logging
 import threading
+import webbrowser
 from typing import Optional
 from urllib.request import urlretrieve
 
@@ -25,6 +26,7 @@ from utils import (
     get_project_summary,
     load_icon_texture,
     load_default_icon,
+    show_clear_confirmation,
 )
 
 # Version
@@ -147,7 +149,7 @@ class LauncherApp:
         dpg.create_viewport(
             title=f'TD Launcher Plus',
             width=info_width,
-            height=666,
+            height=675,
             resizable=True
         )
         dpg.setup_dearpygui()
@@ -265,7 +267,15 @@ class LauncherApp:
             dpg.add_item_clicked_handler(callback=self._on_row_clicked)
 
         with dpg.window(tag="Primary Window", no_scrollbar=True, no_move=True):
-            dpg.add_text(f'TD Launcher Plus {APP_VERSION}', color=[50, 255, 0, 255])
+            # Header Row with Top-Right Info button
+            with dpg.table(header_row=False, policy=dpg.mvTable_SizingFixedFit, width=-1):
+                dpg.add_table_column(width_stretch=True) # Title
+                dpg.add_table_column(width_fixed=True)   # Info Button
+                
+                with dpg.table_row():
+                    dpg.add_text(f'TD Launcher Plus {APP_VERSION}', color=[50, 255, 0, 255])
+                    dpg.add_button(label="Info", callback=self._show_about_modal, small=True)
+            
             dpg.add_separator()
             
             # Create global theme for launcher-sourced recent items (Green)
@@ -294,21 +304,33 @@ class LauncherApp:
                     dpg.add_tab(label="Recent Files", tag="recent_files_tab")
                     dpg.add_tab(label="Templates", tag="templates_tab")
 
-                # Controls row
-                with dpg.group(horizontal=True):
-                    dpg.add_button(label="Browse...", tag="browse_btn_recent", callback=self._on_browse)
+                # Controls row: Using table to push Clear to the right
+                with dpg.table(header_row=False, policy=dpg.mvTable_SizingFixedFit, width=-1):
+                    dpg.add_table_column(width_stretch=True) # Controls
+                    dpg.add_table_column(width_fixed=True)   # Clear button
                     
-                    dpg.add_checkbox(
-                        label="Full History", 
-                        tag="show_full_history_checkbox", 
-                        default_value=self.config.show_full_history, 
-                        callback=self._on_toggle_full_history
-                    )
-                    with dpg.tooltip("show_full_history_checkbox"):
-                        dpg.add_text("Show merged history including TD app recent files extracted by TDLauncherPlusUtility.tox when included in a project (Yellow).\nUncheck to see only manually opened files (Green).")
-                    
-                    dpg.add_checkbox(label="Show Icons", tag="show_icons_checkbox", default_value=show_icons, callback=self._on_toggle_icons)
-                    dpg.add_checkbox(label="Show Info", tag="show_readme_checkbox", default_value=show_readme, callback=self._on_toggle_readme)
+                    with dpg.table_row():
+                        with dpg.group(horizontal=True):
+                            dpg.add_button(label="Browse...", tag="browse_btn_recent", callback=self._on_browse)
+                            
+                            dpg.add_checkbox(
+                                label="Full History", 
+                                tag="show_full_history_checkbox", 
+                                default_value=self.config.show_full_history, 
+                                callback=self._on_toggle_full_history
+                            )
+                            with dpg.tooltip("show_full_history_checkbox"):
+                                dpg.add_text("Show merged history including TD app recent files extracted by TDLauncherPlusUtility.tox when included in a project (Yellow).\nUncheck to see only manually opened files (Green).")
+                            
+                            dpg.add_checkbox(label="Show Icons", tag="show_icons_checkbox", default_value=show_icons, callback=self._on_toggle_icons)
+                            dpg.add_checkbox(label="Show Info", tag="show_readme_checkbox", default_value=show_readme, callback=self._on_toggle_readme)
+                        
+                        dpg.add_button(
+                            label="Clear...", 
+                            tag="clear_recents_btn", 
+                            callback=self._on_clear_recents,
+                            small=True
+                        )
 
                 # Main content area - horizontal layout when readme shown
                 with dpg.group(horizontal=show_readme, tag="content_layout"):
@@ -521,7 +543,8 @@ class LauncherApp:
         
         # Pixels approx: width = chars * multiplier
         # Using 9 as a safe bet for the default font
-        calculated_width = max(200, (max_chars * 9) + 20)
+        calculated_width = max(200, (max_chars * 8) + 0)
+        #calculated_width = 10
 
         for rf in recent_files:
             # Handle both string paths and dict entries
@@ -1442,6 +1465,24 @@ class LauncherApp:
         self._build_recent_files_list()
         self._restore_selection_highlight()
 
+    def _on_clear_recents(self, sender, app_data):
+        """Handle clear history button click."""
+        if show_clear_confirmation():
+            logger.info("Clearing recent files history")
+            self.config.clear_recents()
+            
+            # Clear internal state
+            self.visible_recent_files = []
+            self.selected_file = None
+            self.active_highlight_tags.clear()
+            
+            # Rebuild UI
+            self._build_recent_files_list()
+            self._update_version_panel()
+            
+            if dpg.does_item_exist("readme_content_text"):
+                dpg.set_value("readme_content_text", "")
+
     def _on_key_press(self, sender, app_data):
         """Handle key presses."""
         self._cancel_countdown()
@@ -1601,12 +1642,17 @@ class LauncherApp:
             return
 
         if 0.05 <= time_since_last < 0.5:
-            # Double-click - launch without re-analyzing (already analyzed on first click)
+            # Double-click - launch with current version selection IF it's installed
             if os.path.exists(file_path):
-                self.countdown_enabled = False
-                self._on_launch(sender, app_data)
-            self.last_click_time = 0
-            self.last_clicked_path = None
+                version = dpg.get_value("td_version") if dpg.does_item_exist("td_version") else self.build_info
+                if version and self.td_manager.is_version_installed(version):
+                    self.countdown_enabled = False
+                    # Double-click should NOT promote to top
+                    self._on_launch(sender, app_data, promote=False)
+                    self.last_click_time = 0
+                    self.last_clicked_path = None
+                else:
+                    logger.warning(f"Double-click launch skipped: Version {version} not installed.")
             return
 
         # If it's the same file but NOT a double-click, update the time but don't re-load
@@ -1741,14 +1787,15 @@ class LauncherApp:
         # Restore visual selection highlight (instant=True skips deferred analysis)
         self._restore_selection_highlight()
 
-    def _on_launch(self, sender, app_data):
+    def _on_launch(self, sender, app_data, promote=True):
         """Handle launch button click."""
         if not self.selected_file:
             return
 
-        self.config.add_recent_file(self.selected_file)
-        self.active_manual_file = self.selected_file  # Set as session active
-        self._build_recent_files_list()
+        if promote:
+            self.config.add_recent_file(self.selected_file)
+            self.active_manual_file = self.selected_file  # Set as session active
+            self._build_recent_files_list()
 
         # Get selected version
         version = dpg.get_value("td_version") if dpg.does_item_exist("td_version") else self.build_info
@@ -1817,6 +1864,65 @@ class LauncherApp:
                 subprocess.Popen([self.td_uri])
         except Exception as e:
             logger.error(f"Install failed: {e}")
+
+    def _show_about_modal(self, sender, app_data):
+        """Show the About / Info modal."""
+        modal_tag = "about_modal"
+        if dpg.does_item_exist(modal_tag):
+            dpg.delete_item(modal_tag)
+
+        # Center approx
+        viewport_width = dpg.get_viewport_width()
+        viewport_height = dpg.get_viewport_height()
+        modal_width = 350
+        modal_height = 240
+
+        with dpg.window(
+            label="About TD Launcher Plus",
+            tag=modal_tag,
+            modal=True,
+            show=True,
+            no_resize=True,
+            no_move=True,
+            width=modal_width,
+            height=modal_height,
+            pos=[(viewport_width - modal_width) // 2, (viewport_height - modal_height) // 2]
+        ):
+            dpg.add_text(f"TD Launcher Plus v{APP_VERSION}", color=[50, 255, 0, 255])
+            dpg.add_spacer(height=5)
+            dpg.add_text("A project launcher for TouchDesigner\nwith recent files list, version selection\nand more.")
+            dpg.add_spacer(height=10)
+            
+            with dpg.group(horizontal=True):
+                dpg.add_text("Author:")
+                dpg.add_text("Dan Molnar", color=[200, 255, 200, 255])
+                dpg.add_text("(FunctionStore)", color=[150, 150, 150, 255])
+
+            with dpg.group(horizontal=True):
+                dpg.add_text("Original Author:")
+                dpg.add_text("Lucas Morgan", color=[200, 255, 200, 255])
+                dpg.add_text("(EnviralDesign)", color=[150, 150, 150, 255])
+
+            dpg.add_spacer(height=10)
+            with dpg.table(header_row=False, width=-1):
+                dpg.add_table_column(width_stretch=True)
+                dpg.add_table_column(width_fixed=True)
+                dpg.add_table_column(width_stretch=True)
+                with dpg.table_row():
+                    dpg.add_text("") # Left stretch
+                    with dpg.group(horizontal=True):
+                        dpg.add_button(label="GitHub Repo", callback=self._on_visit_github)
+                        dpg.add_button(label="Update", callback=self._on_check_updates)
+                        dpg.add_button(label="Close", callback=lambda: dpg.delete_item(modal_tag))
+                    dpg.add_text("") # Right stretch
+
+    def _on_visit_github(self):
+        """Open the GitHub repository in the browser."""
+        webbrowser.open("https://github.com/function-store/TD-Launcher-Plus")
+
+    def _on_check_updates(self):
+        """Open the latest releases page on GitHub."""
+        webbrowser.open("https://github.com/function-store/TD-Launcher-Plus/releases/latest")
 
     # =========================================================================
     # Helper Methods

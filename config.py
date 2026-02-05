@@ -137,6 +137,11 @@ class Config:
         ]
         
         self.save()
+    def clear_recents(self) -> None:
+        """Clear all recent files (launcher and TD)."""
+        self._config['launcher_recents'] = []
+        self._config['td_recents'] = []
+        self.save()
 
     def get_recent_files(self, merged: bool = True) -> list:
         """Get processed recent files list.

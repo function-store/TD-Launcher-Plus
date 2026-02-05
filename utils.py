@@ -133,13 +133,13 @@ def show_native_file_picker_multiple(prompt: str = "Select TouchDesigner Files")
 
 
 def find_project_icon(project_path: str) -> Optional[str]:
-    """Find an icon for a project file.
+    """Find an icon for a project file based on a specific priority order.
 
-    Looks for (in order):
-    1. icon.png/jpg/jpeg in the same directory
-    2. icon_temp.png/jpg/jpeg in the same directory
-    3. <projectname>.png/jpg/jpeg (same base name as project file)
-    4. <projectname_without_version>.png/jpg/jpeg (for files like project.7.toe)
+    Priority:
+    1. icon_{name}.png/jpg/jpeg (Manual override)
+    2. icon_temp_{name}.png/jpg/jpeg (Auto-generated specific)
+    3. icon.png/jpg/jpeg (Generic project icon)
+    4. Any image in the directory NOT starting with "icon_" (e.g., screenshots)
     5. Returns None (caller should use default app icon)
 
     Returns the path to the icon file, or None if not found.
@@ -159,63 +159,44 @@ def find_project_icon(project_path: str) -> Optional[str]:
         project_base = os.path.splitext(project_filename)[0]
 
     # Also get base name without version number (e.g., "project.7" -> "project")
-    # Check if the last part after a dot is a number
     project_base_no_version = project_base
     if '.' in project_base:
         parts = project_base.rsplit('.', 1)
         if parts[1].isdigit():
             project_base_no_version = parts[0]
 
-    # 1. icon_{name} (Manual Override)
-    # Check version-stripped first (preferred), then full name
+    # Prep names to check for specific overrides
     names_to_check = []
     if project_base_no_version != project_base:
         names_to_check.append(project_base_no_version)
     names_to_check.append(project_base)
 
+    # 1. icon_{name}
     for name in names_to_check:
         for ext in ['.png', '.jpg', '.jpeg']:
             icon_path = os.path.join(project_dir, f'icon_{name}{ext}')
             if os.path.exists(icon_path):
                 return icon_path
 
-    # 2. icon_temp_{name} (Auto-generated specific)
+    # 2. icon_temp_{name}
     for name in names_to_check:
         for ext in ['.png', '.jpg', '.jpeg']:
             icon_path = os.path.join(project_dir, f'icon_temp_{name}{ext}')
             if os.path.exists(icon_path):
                 return icon_path
 
-    # Second, look for icon.png/jpg/jpeg
+    # 3. icon
     for ext in ['.png', '.jpg', '.jpeg']:
         icon_path = os.path.join(project_dir, f'icon{ext}')
         if os.path.exists(icon_path):
             return icon_path
 
-    # Third, look for icon_temp.png/jpg/jpeg
-    for ext in ['.png', '.jpg', '.jpeg']:
-        icon_path = os.path.join(project_dir, f'icon_temp{ext}')
-        if os.path.exists(icon_path):
-            return icon_path
-
-    # Third, look for <projectname>.png/jpg/jpeg (exact match)
-    for ext in ['.png', '.jpg', '.jpeg']:
-        icon_path = os.path.join(project_dir, f'{project_base}{ext}')
-        if os.path.exists(icon_path):
-            return icon_path
-
-    # Fourth, look for <projectname_without_version>.png/jpg/jpeg
-    if project_base_no_version != project_base:
-        for ext in ['.png', '.jpg', '.jpeg']:
-            icon_path = os.path.join(project_dir, f'{project_base_no_version}{ext}')
-            if os.path.exists(icon_path):
-                return icon_path
-
-    # Fifth, fallback to the newest image in the directory
+    # 4. Any image not starting with icon_ (Fallback to screenshots etc.)
     try:
         candidates = []
         for f in os.listdir(project_dir):
-            if f.lower().endswith(('.png', '.jpg', '.jpeg')):
+            f_lower = f.lower()
+            if f_lower.endswith(('.png', '.jpg', '.jpeg')) and not f_lower.startswith('icon_'):
                 full_path = os.path.join(project_dir, f)
                 if os.path.isfile(full_path):
                     candidates.append(full_path)
@@ -227,7 +208,7 @@ def find_project_icon(project_path: str) -> Optional[str]:
     except Exception:
         pass
 
-    # Not found - caller will use default
+    # 5. Not found - caller will use default
     return None
 
 
@@ -403,3 +384,23 @@ def load_default_icon(size: int = 50) -> Optional[str]:
     except Exception as e:
         logger.debug(f"Failed to create default icon: {e}")
         return None
+def show_clear_confirmation() -> bool:
+    """Show native confirmation dialog for clearing recent files.
+
+    Returns True if confirmed.
+    """
+    if platform.system() == 'Darwin':
+        script = '''
+        set dialogResult to display dialog "Clear all Recent Files history?\\n\\nThis will remove both manually opened files and synced TouchDesigner history from the list." buttons {"Cancel", "Clear History"} default button "Clear History" with title "Clear Recent Files" with icon caution
+        return button returned of dialogResult
+        '''
+        try:
+            result = subprocess.run(['osascript', '-e', script],
+                                    capture_output=True, text=True, timeout=30)
+            button = result.stdout.strip()
+            return button == "Clear History"
+        except Exception:
+            return False
+    else:
+        # Windows/Linux fallback
+        return True
