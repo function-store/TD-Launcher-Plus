@@ -20,12 +20,13 @@ from utils import (
     find_project_icon,
     find_readme,
     read_readme_content,
+    get_project_summary,
     load_icon_texture,
     load_default_icon,
 )
 
 # Version
-APP_VERSION = "1.1.0"
+APP_VERSION = "2.0.0"
 
 # Setup logging
 DEBUG_MODE = os.environ.get('DEBUG', '').lower() in ('1', 'true', 'yes')
@@ -59,7 +60,10 @@ class LauncherApp:
         # Selection tracking
         self.last_click_time = 0.0
         self.last_clicked_path: Optional[str] = None
-        self.picker_selection_index = 0
+        self.tab_selection_indices = {'recent': -1, 'templates': -1}
+        self.visible_recent_files = []
+        self.visible_templates = []
+        self.deferred_analysis_time = 0.0
 
         # Icon cache
         self.icon_textures = {}
@@ -73,6 +77,8 @@ class LauncherApp:
         # Readme state
         self.current_readme_path: Optional[str] = None
         self.readme_modified: bool = False
+        self.mono_font = None
+        self.readme_wrapped: bool = True
 
     def run(self):
         """Run the application."""
@@ -85,20 +91,50 @@ class LauncherApp:
             self._analyze_toe_file(self.toe_file)
             self.selected_file = self.toe_file
             self.config.add_recent_file(self.toe_file)
+        else:
+            # Select first recent file by default
+            recent = self.config.get_recent_files()
+            if recent:
+                entry = recent[0]
+                self.selected_file = entry if isinstance(entry, str) else entry.get('path')
 
         # Create GUI
         dpg.create_context()
+
+        # Load fonts
+        with dpg.font_registry():
+            try:
+                # Common system monospaced fonts
+                font_paths = [
+                    "/System/Library/Fonts/Supplemental/Courier New.ttf",
+                    "/System/Library/Fonts/Monaco.ttf",
+                    "/Library/Fonts/Andale Mono.ttf"
+                ]
+                for path in font_paths:
+                    if os.path.exists(path):
+                        self.mono_font = dpg.add_font(path, 18)
+                        break
+            except Exception as e:
+                logger.debug(f"Failed to load monospaced font: {e}")
 
         with dpg.handler_registry():
             dpg.add_mouse_click_handler(callback=self._on_mouse_click)
             dpg.add_key_press_handler(callback=self._on_key_press)
 
         self._build_ui()
+        
+        # Clean up window margins and scrollbars
+        with dpg.theme() as global_theme:
+            with dpg.theme_component(dpg.mvAll):
+                dpg.add_theme_style(dpg.mvStyleVar_WindowPadding, 8, 8)
+                dpg.add_theme_style(dpg.mvStyleVar_ItemSpacing, 8, 4)
+        dpg.bind_theme(global_theme)
 
-        # Create viewport (always wide to avoid resize flicker)
+        # Create viewport
+        info_width = 1190 if self.config.show_readme else 630
         dpg.create_viewport(
-            title=f'TD Launcher {APP_VERSION}',
-            width=960,
+            title=f'TD Launcher 2.0',
+            width=info_width,
             height=550,
             resizable=True
         )
@@ -157,7 +193,7 @@ class LauncherApp:
         with dpg.item_handler_registry(tag="row_click_handler"):
             dpg.add_item_clicked_handler(callback=self._on_row_clicked)
 
-        with dpg.window(tag="Primary Window"):
+        with dpg.window(tag="Primary Window", no_scrollbar=True, no_move=True):
             dpg.add_text(f'TD Launcher {APP_VERSION}', color=[50, 255, 0, 255])
             dpg.add_separator()
 
@@ -175,18 +211,98 @@ class LauncherApp:
                     policy=dpg.mvTable_SizingStretchProp
                 ):
                     dpg.add_table_column(width_stretch=True, init_width_or_weight=1.0)
-                    dpg.add_table_column(tag="readme_column", width_fixed=True, init_width_or_weight=310)
+                    dpg.add_table_column(tag="readme_column", width_fixed=True, init_width_or_weight=545)
 
+                    # --- ROW 1: HEADERS ---
                     with dpg.table_row():
-                        with dpg.group(tag="main_ui_group"):
-                            self._build_file_picker_section(show_icons, show_readme)
-                            dpg.add_separator()
-                            self._build_version_panel()
-                            dpg.add_separator()
-                            self._build_launch_button()
+                        with dpg.group():
+                            with dpg.tab_bar(tag="file_picker_tabs", callback=self._on_tab_changed):
+                                dpg.add_tab(label="Recent Files", tag="recent_files_tab")
+                                dpg.add_tab(label="Templates", tag="templates_tab")
+                        with dpg.group():
+                            dpg.add_spacer(height=6)
+                            with dpg.group(horizontal=True):
+                                dpg.add_spacer(width=12)
+                                dpg.add_text("Project Info", color=[200, 200, 200, 255])
+                    
+                    # --- ROW 2: SEPARATOR ---
+                    with dpg.table_row():
+                        dpg.add_separator()
+                        dpg.add_separator()
 
-                        with dpg.group(tag="readme_panel_group"):
-                            self._build_readme_panel()
+                    # --- ROW 3: CONTROLS ---
+                    with dpg.table_row():
+                        with dpg.group(horizontal=True):
+                            dpg.add_button(label="Browse...", tag="browse_btn_recent", callback=self._on_browse)
+                            dpg.add_checkbox(label="Show Icons", tag="show_icons_checkbox", default_value=show_icons, callback=self._on_toggle_icons)
+                            dpg.add_checkbox(label="Show Info", tag="show_readme_checkbox", default_value=show_readme, callback=self._on_toggle_readme)
+                        with dpg.group():
+                            dpg.add_spacer(height=4)
+                            with dpg.group(horizontal=True):
+                                dpg.add_spacer(width=12)
+                                dpg.add_text("Select a file...", tag="readme_status_text", color=[150, 150, 150, 255])
+
+                    # --- ROW 4: SEPARATOR ---
+                    with dpg.table_row():
+                        dpg.add_separator()
+                        dpg.add_separator()
+
+                    # --- ROW 5: MAIN CONTENT ---
+                    with dpg.table_row():
+                        with dpg.group():
+                            # Reduced heights to fit within 550px viewport
+                            with dpg.child_window(height=135, width=-1, tag="recent_files_list", horizontal_scrollbar=True):
+                                self._build_recent_files_list()
+                            with dpg.child_window(height=135, width=-1, tag="templates_list", horizontal_scrollbar=True, show=False):
+                                self._build_templates_list()
+                            dpg.add_separator()
+                            with dpg.child_window(height=205, width=-1, tag="version_panel"):
+                                pass # Content will be added by _update_version_panel calls
+                        
+                        # README Editor - height should match left side (135 + 8 sep + 205 = 348)
+                        with dpg.child_window(tag="readme_container", width=540, height=348, border=False):
+                            with dpg.child_window(tag="readme_scroll_parent", width=-1, height=-1, horizontal_scrollbar=True):
+                                with dpg.group(horizontal=True, tag="readme_content_group"):
+                                    with dpg.group():
+                                        dpg.add_spacer(height=5)
+                                        dpg.add_text("", tag="readme_gutter_text")
+                                    dpg.add_input_text(
+                                        tag="readme_content_text",
+                                        multiline=True,
+                                        width=2000 if not self.readme_wrapped else -1,
+                                        height=400, # Will be synced
+                                        callback=self._on_readme_changed,
+                                        on_enter=False
+                                    )
+
+                    # --- ROW 6: SEPARATOR ---
+                    with dpg.table_row():
+                        dpg.add_separator()
+                        dpg.add_separator()
+
+                    # --- ROW 7: FOOTER ---
+                    with dpg.table_row():
+                        with dpg.group():
+                            self._build_launch_button()
+                        with dpg.group(horizontal=True):
+                            # Center-align buttons vertically with the launch button
+                            dpg.add_spacer(height=5)
+                            dpg.add_button(label="Save", tag="readme_save_button", callback=self._on_save_readme, show=False)
+                            dpg.add_button(label="View", tag="readme_view_button", callback=self._on_view_readme, show=False)
+                            dpg.add_button(label="Wrap: ON", tag="readme_wrap_toggle", callback=self._on_toggle_readme_wrap, show=False)
+
+                # Theme for solid backgrounds
+                with dpg.theme() as info_theme:
+                    with dpg.theme_component(dpg.mvChildWindow):
+                        dpg.add_theme_color(dpg.mvThemeCol_ChildBg, [28, 28, 28, 255])
+                        dpg.add_theme_style(dpg.mvStyleVar_ChildRounding, 4)
+                    with dpg.theme_component(dpg.mvInputText):
+                        dpg.add_theme_color(dpg.mvThemeCol_FrameBg, [20, 20, 20, 255])
+                        dpg.add_theme_style(dpg.mvStyleVar_FrameBorderSize, 0)
+                        dpg.add_theme_style(dpg.mvStyleVar_FrameRounding, 2)
+
+                dpg.bind_item_theme("readme_container", info_theme)
+                dpg.bind_item_theme("readme_content_text", info_theme)
             else:
                 with dpg.group(tag="main_ui_group"):
                     self._build_file_picker_section(show_icons, show_readme)
@@ -196,10 +312,13 @@ class LauncherApp:
                     self._build_launch_button()
 
         dpg.set_primary_window("Primary Window", True)
-        self.seconds_started = time.time()
 
-        # If file was provided, update version panel
-        if self.selected_file:
+        # If file was provided or we have recent files, select the first one visually
+        # This also populates the version panel and README
+        if self.visible_recent_files:
+            self._move_picker_selection(1)
+        elif self.selected_file and self.toe_file:
+            # Backup for when file provided but config empty (rare)
             self._update_version_panel()
 
     def _build_file_picker_section(self, show_icons: bool, show_readme: bool):
@@ -225,7 +344,7 @@ class LauncherApp:
                         default_value=show_readme,
                         callback=self._on_toggle_readme
                     )
-                with dpg.child_window(height=150, width=-1, tag="recent_files_list"):
+                with dpg.child_window(height=150, width=-1, tag="recent_files_list", horizontal_scrollbar=True):
                     self._build_recent_files_list()
 
             # Templates Tab
@@ -248,7 +367,7 @@ class LauncherApp:
                         default_value=show_readme,
                         callback=self._on_toggle_readme
                     )
-                with dpg.child_window(height=150, width=-1, tag="templates_list"):
+                with dpg.child_window(height=150, width=-1, tag="templates_list", horizontal_scrollbar=True):
                     self._build_templates_list()
 
     def _is_versioned_toe(self, filename: str) -> bool:
@@ -266,6 +385,7 @@ class LauncherApp:
         if dpg.does_item_exist("recent_files_list"):
             dpg.delete_item("recent_files_list", children_only=True)
 
+        self.visible_recent_files = []
         recent_files = self.config.get_recent_files()
         show_icons = self.config.show_icons
 
@@ -307,6 +427,7 @@ class LauncherApp:
             if file_path in shown_paths:
                 continue
             shown_paths.add(file_path)
+            self.visible_recent_files.append(file_path)
 
             exists = os.path.exists(file_path)
             modified = format_file_modified_time(file_path) if exists else ""
@@ -326,50 +447,61 @@ class LauncherApp:
                         dpg.add_image(texture_tag, width=50, height=50, tag=f"recent_icon_{i}")
                         dpg.bind_item_handler_registry(f"recent_icon_{i}", "row_click_handler")
 
-                # Filename (selectable)
-                dpg.add_selectable(
-                    label=display_name,
-                    tag=f"recent_file_{i}",
-                    callback=self._on_file_selected,
-                    user_data={'path': file_path, 'type': 'recent'},
-                    width=200
-                )
+                # Content group for vertical centering
+                with dpg.group():
+                    if show_icons:
+                        dpg.add_spacer(height=11)
+                    with dpg.group(horizontal=True):
+                        # Filename (selectable)
+                        dpg.add_selectable(
+                            label=display_name,
+                            tag=f"recent_file_{i}",
+                            callback=self._on_file_selected,
+                            user_data={'path': file_path, 'type': 'recent'},
+                            width=200
+                        )
+                        summary = get_project_summary(file_path)
+                        with dpg.tooltip(dpg.last_item()):
+                            dpg.add_text(summary if summary else file_path, wrap=400)
 
-                # Modified date
-                dpg.add_text(
-                    f"  {modified}",
-                    color=[100, 150, 100, 255] if exists else [100, 50, 50, 255],
-                    tag=f"recent_mod_{i}"
-                )
-                dpg.bind_item_handler_registry(f"recent_mod_{i}", "row_click_handler")
+                        # Remove button (moved next to name)
+                        dpg.add_button(
+                            label="X",
+                            tag=f"remove_recent_{i}",
+                            callback=self._on_remove_recent,
+                            user_data=file_path,
+                            small=True
+                        )
 
-                # Path
-                dpg.add_text(
-                    f"  {file_path}",
-                    color=[150, 150, 150, 255] if exists else [100, 50, 50, 255],
-                    tag=f"recent_path_{i}"
-                )
-                dpg.bind_item_handler_registry(f"recent_path_{i}", "row_click_handler")
+                        # Modified date
+                        dpg.add_text(
+                            f"  {modified}",
+                            color=[100, 150, 100, 255] if exists else [100, 50, 50, 255],
+                            tag=f"recent_mod_{i}"
+                        )
+                        dpg.bind_item_handler_registry(f"recent_mod_{i}", "row_click_handler")
 
-                # Missing indicator
-                if not exists:
-                    dpg.add_text(" (missing)", color=[255, 50, 0, 255], tag=f"recent_missing_{i}")
-                    dpg.bind_item_handler_registry(f"recent_missing_{i}", "row_click_handler")
+                        # Path
+                        dpg.add_text(
+                            f"  {file_path}",
+                            color=[150, 150, 150, 255] if exists else [100, 50, 50, 255],
+                            tag=f"recent_path_{i}"
+                        )
+                        dpg.bind_item_handler_registry(f"recent_path_{i}", "row_click_handler")
+                        with dpg.tooltip(dpg.last_item()):
+                            dpg.add_text(file_path, wrap=400)
 
-                # Remove button
-                dpg.add_button(
-                    label="X",
-                    tag=f"remove_recent_{i}",
-                    callback=self._on_remove_recent,
-                    user_data=file_path,
-                    small=True
-                )
+                        # Missing indicator
+                        if not exists:
+                            dpg.add_text(" (missing)", color=[255, 50, 0, 255], tag=f"recent_missing_{i}")
+                            dpg.bind_item_handler_registry(f"recent_missing_{i}", "row_click_handler")
 
     def _build_templates_list(self):
         """Build the templates list."""
         if dpg.does_item_exist("templates_list"):
             dpg.delete_item("templates_list", children_only=True)
 
+        self.visible_templates = []
         templates = self.config.get_templates()
         show_icons = self.config.show_icons
 
@@ -384,6 +516,7 @@ class LauncherApp:
         for i, t in enumerate(templates):
             # Handle both string paths and dict entries
             file_path = t if isinstance(t, str) else t.get('path', '')
+            self.visible_templates.append(file_path)
             name = os.path.basename(file_path) if isinstance(t, str) else t.get('name', os.path.basename(file_path))
             exists = os.path.exists(file_path)
             modified = format_file_modified_time(file_path) if exists else ""
@@ -401,36 +534,46 @@ class LauncherApp:
                         dpg.add_image(texture_tag, width=50, height=50, tag=f"template_icon_{i}")
                         dpg.bind_item_handler_registry(f"template_icon_{i}", "row_click_handler")
 
-                # Name (selectable)
-                dpg.add_selectable(
-                    label=name,
-                    tag=f"template_{i}",
-                    callback=self._on_file_selected,
-                    user_data={'path': file_path, 'type': 'template'},
-                    width=220
-                )
+                # Content group for vertical centering
+                with dpg.group():
+                    if show_icons:
+                        dpg.add_spacer(height=11)
+                    with dpg.group(horizontal=True):
+                        # Name (selectable)
+                        dpg.add_selectable(
+                            label=name,
+                            tag=f"template_{i}",
+                            callback=self._on_file_selected,
+                            user_data={'path': file_path, 'type': 'template'},
+                            width=220
+                        )
+                        summary = get_project_summary(file_path)
+                        with dpg.tooltip(dpg.last_item()):
+                            dpg.add_text(summary if summary else file_path, wrap=400)
 
-                # Modified date
-                dpg.add_text(f"  {modified}", color=[100, 150, 100, 255], tag=f"template_mod_{i}")
-                dpg.bind_item_handler_registry(f"template_mod_{i}", "row_click_handler")
+                        # Remove button (moved next to name)
+                        dpg.add_button(
+                            label="X",
+                            tag=f"remove_template_{i}",
+                            callback=self._on_remove_template,
+                            user_data=file_path,
+                            small=True
+                        )
 
-                # Path
-                dpg.add_text(f"  {file_path}", color=[150, 150, 150, 255], tag=f"template_path_{i}")
-                dpg.bind_item_handler_registry(f"template_path_{i}", "row_click_handler")
+                        # Modified date
+                        dpg.add_text(f"  {modified}", color=[100, 150, 100, 255], tag=f"template_mod_{i}")
+                        dpg.bind_item_handler_registry(f"template_mod_{i}", "row_click_handler")
 
-                # Missing indicator
-                if not exists:
-                    dpg.add_text(" (missing)", color=[255, 50, 0, 255], tag=f"template_missing_{i}")
-                    dpg.bind_item_handler_registry(f"template_missing_{i}", "row_click_handler")
+                        # Path
+                        dpg.add_text(f"  {file_path}", color=[150, 150, 150, 255], tag=f"template_path_{i}")
+                        dpg.bind_item_handler_registry(f"template_path_{i}", "row_click_handler")
+                        with dpg.tooltip(dpg.last_item()):
+                            dpg.add_text(file_path, wrap=400)
 
-                # Remove button
-                dpg.add_button(
-                    label="X",
-                    tag=f"remove_template_{i}",
-                    callback=self._on_remove_template,
-                    user_data=file_path,
-                    small=True
-                )
+                        # Missing indicator
+                        if not exists:
+                            dpg.add_text(" (missing)", color=[255, 50, 0, 255], tag=f"template_missing_{i}")
+                            dpg.bind_item_handler_registry(f"template_missing_{i}", "row_click_handler")
 
     def _build_version_panel(self):
         """Build the version panel section."""
@@ -453,38 +596,93 @@ class LauncherApp:
 
     def _build_readme_panel(self):
         """Build the readme panel."""
-        dpg.add_text("Project Info", color=[200, 200, 200, 255])
-        dpg.add_separator()
-        with dpg.group(horizontal=True):
+        # Use a secondary child window with a solid background to block leakage from background
+        with dpg.child_window(tag="readme_container", width=540, height=520, border=False):
+            # 1. Title Row - Spacing to align with Tab Bar (height approx 26-28)
+            dpg.add_spacer(height=3)
+            dpg.add_text("Project Info", color=[200, 200, 200, 255])
+            dpg.add_spacer(height=6)
+            dpg.add_separator()
+            
+            # 2. Status/Buttons Row - Align with Browse... button row (height approx 30)
+            dpg.add_spacer(height=6)
             dpg.add_text(
                 "Select a file...",
                 tag="readme_status_text",
                 color=[150, 150, 150, 255],
             )
-            dpg.add_button(
-                label="Save",
-                tag="readme_save_button",
-                callback=self._on_save_readme,
-                small=True,
-                show=False
-            )
-            dpg.add_button(
-                label="View",
-                tag="readme_view_button",
-                callback=self._on_view_readme,
-                small=True,
-                show=False
-            )
-        dpg.add_separator()
-        dpg.add_input_text(
-            tag="readme_content_text",
-            multiline=True,
-            width=290,
-            height=390,
-            default_value="",
-            callback=self._on_readme_changed,
-            on_enter=False
-        )
+            dpg.add_spacer(height=8)
+            dpg.add_separator()
+            
+            # 3. Editor Content - Aligned with the start of the list
+            dpg.add_spacer(height=5)
+            with dpg.child_window(tag="readme_scroll_parent", width=532, height=365, horizontal_scrollbar=True):
+                with dpg.group(horizontal=True, tag="readme_content_group"):
+                    # Gutter - with vertical alignment spacer
+                    with dpg.group():
+                        dpg.add_spacer(height=5) # Align with input_text internal padding
+                        dpg.add_text("", tag="readme_gutter_text", color=[120, 120, 120, 255])
+                    
+                    # Editor
+                    dpg.add_input_text(
+                        tag="readme_content_text",
+                        multiline=True,
+                        width=2000 if not self.readme_wrapped else -1, 
+                        height=400, 
+                        callback=self._on_readme_changed,
+                        on_enter=False
+                    )
+
+            dpg.add_spacer(height=4)
+            dpg.add_separator()
+            
+            # 4. Footer Buttons
+            with dpg.group(horizontal=True):
+                dpg.add_button(
+                    label="Save",
+                    tag="readme_save_button",
+                    callback=self._on_save_readme,
+                    small=False, # Make them bigger as they are in the footer
+                    show=False
+                )
+                dpg.add_button(
+                    label="View",
+                    tag="readme_view_button",
+                    callback=self._on_view_readme,
+                    small=False,
+                    show=False
+                )
+                dpg.add_button(
+                    label="Wrap: ON",
+                    tag="readme_wrap_toggle",
+                    callback=self._on_toggle_readme_wrap,
+                    small=False,
+                    show=False
+                )
+
+        # Consolidate Themes
+        with dpg.theme() as info_theme:
+            with dpg.theme_component(dpg.mvChildWindow):
+                # Solid opaque background
+                dpg.add_theme_color(dpg.mvThemeCol_ChildBg, [28, 28, 28, 255])
+                dpg.add_theme_style(dpg.mvStyleVar_ChildRounding, 4)
+            with dpg.theme_component(dpg.mvInputText):
+                # Black IDE background for editor
+                dpg.add_theme_color(dpg.mvThemeCol_FrameBg, [20, 20, 20, 255])
+                dpg.add_theme_style(dpg.mvStyleVar_FrameBorderSize, 0)
+                dpg.add_theme_style(dpg.mvStyleVar_FrameRounding, 2)
+
+        with dpg.theme() as gutter_theme:
+            with dpg.theme_component(dpg.mvText):
+                dpg.add_theme_color(dpg.mvThemeCol_Text, [110, 110, 110, 255])
+
+        dpg.bind_item_theme("readme_container", info_theme)
+        dpg.bind_item_theme("readme_scroll_parent", info_theme)
+        dpg.bind_item_theme("readme_content_text", info_theme)
+        dpg.bind_item_theme("readme_gutter_text", gutter_theme)
+
+        if self.mono_font:
+            dpg.bind_item_font("readme_content_group", self.mono_font)
 
     def _update_version_panel(self, skip_analysis: bool = False):
         """Update the version panel with selected file info."""
@@ -497,8 +695,9 @@ class LauncherApp:
                 parent="version_panel",
                 color=[150, 150, 150, 255]
             )
-            dpg.configure_item("launch_button", enabled=False)
-            dpg.configure_item("launch_button", label="Select a file to launch")
+            if dpg.does_item_exist("launch_button"):
+                dpg.configure_item("launch_button", enabled=False)
+                dpg.configure_item("launch_button", label="Select a file to launch")
             self.countdown_enabled = False
             return
 
@@ -529,16 +728,18 @@ class LauncherApp:
                         tag="td_version",
                         horizontal=False
                     )
-                filename = os.path.basename(self.selected_file)
-                dpg.configure_item("launch_button", enabled=True)
-                dpg.configure_item("launch_button", label=f"Launch {filename}")
+                if dpg.does_item_exist("launch_button"):
+                    filename = os.path.basename(self.selected_file)
+                    dpg.configure_item("launch_button", enabled=True)
+                    dpg.configure_item("launch_button", label=f"Launch {filename}")
             else:
                 dpg.add_text(
                     "No TouchDesigner versions found!",
                     parent="version_panel",
                     color=[255, 50, 0, 255]
                 )
-                dpg.configure_item("launch_button", enabled=False)
+                if dpg.does_item_exist("launch_button"):
+                    dpg.configure_item("launch_button", enabled=False)
 
             # Still update readme panel
             self._update_readme_panel()
@@ -563,7 +764,7 @@ class LauncherApp:
                 parent="version_panel",
                 color=[50, 255, 0, 255]
             )
-            self.countdown_enabled = True
+            # Maintain current countdown state instead of forcing True
 
         dpg.add_separator(parent="version_panel")
         dpg.add_text("Override version:", parent="version_panel", color=[150, 150, 150, 255])
@@ -583,8 +784,9 @@ class LauncherApp:
             )
 
         # Update launch button
-        dpg.configure_item("launch_button", enabled=True)
-        dpg.configure_item("launch_button", label=f"Launch {filename}")
+        if dpg.does_item_exist("launch_button"):
+            dpg.configure_item("launch_button", enabled=True)
+            dpg.configure_item("launch_button", label=f"Launch {filename}")
 
         # Update readme panel
         self._update_readme_panel()
@@ -648,6 +850,85 @@ class LauncherApp:
                     callback=self._on_install
                 )
 
+    def _on_toggle_readme_wrap(self, sender, app_data):
+        """Toggle between wrapped view and raw edit."""
+        self.readme_wrapped = not self.readme_wrapped
+        label = "Wrap: ON" if self.readme_wrapped else "Wrap: OFF"
+        dpg.configure_item("readme_wrap_toggle", label=label)
+        
+        # Re-process current content
+        content = dpg.get_value("readme_content_text")
+        if self.readme_wrapped:
+            # Wrap it
+            gutter, wrapped = self._wrap_content_with_gutter(self._unwrap_content(content))
+            dpg.set_value("readme_content_text", wrapped)
+            dpg.set_value("readme_gutter_text", gutter)
+            dpg.configure_item("readme_content_text", width=-1)
+        else:
+            # Unwrap it
+            unwrapped = self._unwrap_content(content)
+            dpg.set_value("readme_content_text", unwrapped)
+            # Simple gutter for unwrapped
+            num_lines = unwrapped.count('\n') + 1
+            gutter = '\n'.join([f"{i+1:>3} " for i in range(num_lines)])
+            dpg.set_value("readme_gutter_text", gutter)
+            dpg.configure_item("readme_content_text", width=2048)
+        
+        self._sync_readme_height()
+
+    def _sync_readme_height(self):
+        """Sync editor height to content to avoid internal scrollbars."""
+        if not dpg.does_item_exist("readme_content_text"):
+            return
+        content = dpg.get_value("readme_content_text")
+        num_lines = content.count('\n') + 1
+        # 18pt font is roughly 24px tall with padding
+        new_h = max(390, num_lines * 26 + 20)
+        dpg.configure_item("readme_content_text", height=new_h)
+
+    def _wrap_content_with_gutter(self, text: str, width: int = 45):
+        """Wrap text into content and gutter strings using indentation."""
+        if not text:
+            return "", ""
+        
+        lines = text.split('\n')
+        wrapped_content = []
+        gutter_lines = []
+        
+        for i, line in enumerate(lines):
+            line_num = str(i + 1)
+            line_num_display = f"{line_num:>3} "
+            
+            if not line:
+                wrapped_content.append("")
+                gutter_lines.append(line_num_display)
+                continue
+                
+            first = True
+            remaining = line
+            while remaining:
+                if first:
+                    chunk = remaining[:width]
+                    wrapped_content.append(chunk)
+                    gutter_lines.append(line_num_display)
+                    first = False
+                    remaining = remaining[width:]
+                else:
+                    # Wrapped part: just indent slightly, no arrows
+                    chunk = remaining[:width-1]
+                    wrapped_content.append(f" {chunk}")
+                    gutter_lines.append("    ") 
+                    remaining = remaining[width-1:]
+                
+        return '\n'.join(gutter_lines), '\n'.join(wrapped_content)
+
+    def _unwrap_content(self, text: str) -> str:
+        """Remove visual line indentation from wrapped lines."""
+        if not text:
+            return ""
+        # We look for newlines followed by our single-space indent
+        return text.replace('\n ', '')
+
     def _update_readme_panel(self):
         """Update the readme panel with file info."""
         if not self.config.show_readme:
@@ -659,27 +940,55 @@ class LauncherApp:
         if self.selected_file and os.path.exists(self.selected_file):
             readme_path = find_readme(self.selected_file)
             project_dir = os.path.dirname(self.selected_file)
+            
             if readme_path:
                 content = read_readme_content(readme_path, max_length=50000)  # Allow more for editing
+                
+                if self.readme_wrapped:
+                    gutter, display_content = self._wrap_content_with_gutter(content, width=45)
+                else:
+                    gutter = '\n'.join([f"{i+1:>3} " for i in range(content.count('\n') + 1)])
+                    display_content = content
+                
                 dpg.set_value("readme_status_text", os.path.basename(readme_path))
                 dpg.configure_item("readme_status_text", color=[100, 255, 100, 255])
-                dpg.set_value("readme_content_text", content)
+                
+                if dpg.does_item_exist("readme_gutter_text"):
+                    dpg.set_value("readme_gutter_text", gutter)
+                if dpg.does_item_exist("readme_content_text"):
+                    dpg.set_value("readme_content_text", display_content)
+                self._sync_readme_height()
                 self.current_readme_path = readme_path
             else:
                 # No readme - allow creating one
                 dpg.set_value("readme_status_text", "README.md (new)")
                 dpg.configure_item("readme_status_text", color=[200, 200, 100, 255])
-                dpg.set_value("readme_content_text", "")
+                if dpg.does_item_exist("readme_gutter_text"):
+                    dpg.set_value("readme_gutter_text", "  1 ")
+                if dpg.does_item_exist("readme_content_text"):
+                    dpg.set_value("readme_content_text", "")
                 self.current_readme_path = os.path.join(project_dir, "README.md")
-            dpg.configure_item("readme_save_button", show=True)
-            dpg.configure_item("readme_view_button", show=True)
+            
+            if dpg.does_item_exist("readme_save_button"):
+                dpg.configure_item("readme_save_button", show=True)
+            if dpg.does_item_exist("readme_view_button"):
+                dpg.configure_item("readme_view_button", show=True)
+            if dpg.does_item_exist("readme_wrap_toggle"):
+                dpg.configure_item("readme_wrap_toggle", show=True)
             self.readme_modified = False
         else:
             dpg.set_value("readme_status_text", "Select a file...")
             dpg.configure_item("readme_status_text", color=[150, 150, 150, 255])
-            dpg.set_value("readme_content_text", "")
-            dpg.configure_item("readme_save_button", show=False)
-            dpg.configure_item("readme_view_button", show=False)
+            if dpg.does_item_exist("readme_gutter_text"):
+                dpg.set_value("readme_gutter_text", "")
+            if dpg.does_item_exist("readme_content_text"):
+                dpg.set_value("readme_content_text", "")
+            if dpg.does_item_exist("readme_save_button"):
+                dpg.configure_item("readme_save_button", show=False)
+            if dpg.does_item_exist("readme_view_button"):
+                dpg.configure_item("readme_view_button", show=False)
+            if dpg.does_item_exist("readme_wrap_toggle"):
+                dpg.configure_item("readme_wrap_toggle", show=False)
             self.current_readme_path = None
             self.readme_modified = False
 
@@ -688,6 +997,25 @@ class LauncherApp:
         self.readme_modified = True
         if dpg.does_item_exist("readme_save_button"):
             dpg.configure_item("readme_save_button", label="Save *")
+        
+        # Live refresh line numbers in the gutter
+        if dpg.does_item_exist("readme_gutter_text"):
+            lines = app_data.split('\n')
+            gutter_lines = []
+            
+            line_count = 1
+            for line in lines:
+                if line.startswith(" "):
+                    # Lines starting with a space are considered wrapped continuation
+                    gutter_lines.append("    ")
+                else:
+                    # Logical line start
+                    gutter_lines.append(f"{line_count:>3} ")
+                    line_count += 1
+            
+            dpg.set_value("readme_gutter_text", '\n'.join(gutter_lines))
+
+        self._sync_readme_height()
 
     def _on_save_readme(self, sender, app_data):
         """Save readme content to file."""
@@ -695,6 +1023,9 @@ class LauncherApp:
             return
 
         content = dpg.get_value("readme_content_text")
+        # Ensure we unwrap indicators before saving
+        content = self._unwrap_content(content)
+        
         try:
             with open(self.current_readme_path, 'w', encoding='utf-8') as f:
                 f.write(content)
@@ -713,6 +1044,8 @@ class LauncherApp:
         import tempfile
 
         content = dpg.get_value("readme_content_text")
+        # Unwrap for the HTML viewer
+        content = self._unwrap_content(content)
         if not content.strip():
             return
 
@@ -863,6 +1196,39 @@ class LauncherApp:
         """Handle mouse clicks (cancels countdown)."""
         self._cancel_countdown()
 
+    def _on_tab_changed(self, sender, app_data):
+        """Handle tab bar selection change."""
+        # app_data is usually the ID of the tab in Dear PyGui tab_bar callbacks
+        tab_id = app_data
+        tab_tag = dpg.get_item_alias(tab_id) if isinstance(tab_id, int) else tab_id
+        
+        # In grid mode, we need to toggle list visibility and button labels
+        if tab_tag == "recent_files_tab":
+            if dpg.does_item_exist("recent_files_list"):
+                dpg.configure_item("recent_files_list", show=True)
+            if dpg.does_item_exist("templates_list"):
+                dpg.configure_item("templates_list", show=False)
+            if dpg.does_item_exist("browse_btn_recent"):
+                dpg.configure_item("browse_btn_recent", label="Browse...", callback=self._on_browse)
+        elif tab_tag == "templates_tab":
+            if dpg.does_item_exist("recent_files_list"):
+                dpg.configure_item("recent_files_list", show=False)
+            if dpg.does_item_exist("templates_list"):
+                dpg.configure_item("templates_list", show=True)
+            if dpg.does_item_exist("browse_btn_recent"):
+                dpg.configure_item("browse_btn_recent", label="Add Template...", callback=self._on_add_template)
+
+        # Restore selection for the newly active tab
+        current_tab = 'recent' if tab_tag == "recent_files_tab" else 'templates'
+        items = self.visible_recent_files if current_tab == 'recent' else self.visible_templates
+        if items:
+            # If nothing selected yet in this tab, select first row
+            if self.tab_selection_indices[current_tab] == -1:
+                self.tab_selection_indices[current_tab] = 0
+            
+            # Refresh visual state and loading
+            self._move_picker_selection(0)
+
     def _on_key_press(self, sender, app_data):
         """Handle key presses."""
         self._cancel_countdown()
@@ -947,7 +1313,7 @@ class LauncherApp:
             if idx < 0 or idx >= len(items):
                 return
 
-            file_path = items[idx].get('path', '')
+            file_path = items[idx] if isinstance(items[idx], str) else items[idx].get('path', '')
             if not file_path:
                 return
 
@@ -970,6 +1336,14 @@ class LauncherApp:
         self._clear_all_selections()
         if sender and dpg.does_item_exist(sender):
             dpg.set_value(sender, True)
+            # Sync index if sender is a numbered list item
+            try:
+                parts = sender.split('_')
+                if parts[-1].isdigit():
+                    current_tab = self._get_current_tab()
+                    self.tab_selection_indices[current_tab] = int(parts[-1])
+            except (AttributeError, ValueError):
+                pass
 
         # Double-click detection
         if file_path != self.last_clicked_path:
@@ -996,12 +1370,8 @@ class LauncherApp:
             self.last_clicked_path = None
             return
 
+        # If it's the same file but NOT a double-click, update the time but don't re-load
         self.last_click_time = current_time
-
-        if os.path.exists(file_path):
-            self.selected_file = file_path
-            self._update_version_panel()
-            self.countdown_enabled = False
 
     def _on_browse(self, sender, app_data):
         """Handle browse button click."""
@@ -1043,6 +1413,7 @@ class LauncherApp:
     def _on_toggle_readme(self, sender, app_data):
         """Handle show readme toggle."""
         self.config.show_readme = app_data
+        self._cancel_countdown()
 
         # Save current state
         saved_file = self.selected_file
@@ -1055,6 +1426,13 @@ class LauncherApp:
         # Rebuild UI with new layout
         if dpg.does_item_exist("Primary Window"):
             dpg.delete_item("Primary Window")
+        
+        # Resize viewport before rebuild
+        if app_data:
+            dpg.set_viewport_width(1190)
+        else:
+            dpg.set_viewport_width(630)
+            
         self._build_ui()
 
         # Restore state without re-analyzing
@@ -1089,7 +1467,11 @@ class LauncherApp:
 
         try:
             if platform.system() == 'Darwin':
-                subprocess.Popen(['open', '-a', os.path.dirname(executable), self.selected_file])
+                app_path = self.td_manager.get_app_path(version)
+                if app_path:
+                    subprocess.Popen(['open', '-a', app_path, self.selected_file])
+                else:
+                    subprocess.Popen([executable, self.selected_file])
             else:
                 subprocess.Popen([executable, self.selected_file])
             dpg.stop_dearpygui()
@@ -1146,15 +1528,15 @@ class LauncherApp:
     # =========================================================================
 
     def _clear_all_selections(self):
-        """Clear all selectable states."""
-        i = 0
-        while dpg.does_item_exist(f"recent_file_{i}"):
-            dpg.set_value(f"recent_file_{i}", False)
-            i += 1
-        i = 0
-        while dpg.does_item_exist(f"template_{i}"):
-            dpg.set_value(f"template_{i}", False)
-            i += 1
+        """Clear all selectable states in the visible lists."""
+        for i in range(len(self.visible_recent_files)):
+            tag = f"recent_file_{i}"
+            if dpg.does_item_exist(tag):
+                dpg.set_value(tag, False)
+        for i in range(len(self.visible_templates)):
+            tag = f"template_{i}"
+            if dpg.does_item_exist(tag):
+                dpg.set_value(tag, False)
 
     def _confirm_and_remove(self, file_path: str, list_type: str = None):
         """Confirm and remove a file from a list."""
@@ -1190,8 +1572,9 @@ class LauncherApp:
         # Clear selection if removed file was selected
         if self.selected_file and os.path.abspath(self.selected_file) == os.path.abspath(file_path):
             self.selected_file = None
-            dpg.configure_item("launch_button", enabled=False)
-            dpg.configure_item("launch_button", label="Select a file to launch")
+            if dpg.does_item_exist("launch_button"):
+                dpg.configure_item("launch_button", enabled=False)
+                dpg.configure_item("launch_button", label="Select a file to launch")
 
     def _cancel_countdown(self):
         """Cancel the countdown."""
@@ -1202,7 +1585,12 @@ class LauncherApp:
                 dpg.configure_item("launch_button", label=f"Open with selected version")
 
     def _update_countdown(self):
-        """Update the countdown timer."""
+        """Update the countdown timer and handle debounced analysis."""
+        # Handle debounced analysis
+        if self.deferred_analysis_time > 0 and time.time() > self.deferred_analysis_time:
+            self.deferred_analysis_time = 0
+            self._update_version_panel()
+
         if not self.countdown_enabled:
             return
 
@@ -1230,40 +1618,50 @@ class LauncherApp:
 
         if current == templates_id and recent_id:
             dpg.set_value("file_picker_tabs", recent_id)
+            self._move_picker_selection(0) # Trigger selection restoration
         elif recent_id and templates_id:
             dpg.set_value("file_picker_tabs", templates_id)
+            self._move_picker_selection(0)
 
-        self.picker_selection_index = 0
-
-    def _move_picker_selection(self, step: int):
+    def _move_picker_selection(self, step: int, instant: bool = False):
         """Move selection up or down in the current list."""
         current_tab = self._get_current_tab()
 
         if current_tab == 'recent':
-            items = self.config.get_recent_files()
+            items = self.visible_recent_files
             prefix = "recent_file_"
         else:
-            items = self.config.get_templates()
+            items = self.visible_templates
             prefix = "template_"
 
         if not items:
             return
 
-        self.picker_selection_index = (self.picker_selection_index + step) % len(items)
+        # Initialize to 0 if starting from -1
+        if self.tab_selection_indices[current_tab] == -1:
+            self.tab_selection_indices[current_tab] = 0
+        else:
+            self.tab_selection_indices[current_tab] = (self.tab_selection_indices[current_tab] + step) % len(items)
 
         # Update visual selection
         self._clear_all_selections()
-        tag = f"{prefix}{self.picker_selection_index}"
+        tag = f"{prefix}{self.tab_selection_indices[current_tab]}"
         if dpg.does_item_exist(tag):
             dpg.set_value(tag, True)
 
         # Update selected file
-        item = items[self.picker_selection_index]
-        file_path = item.get('path', '')
+        item = items[self.tab_selection_indices[current_tab]]
+        file_path = item if isinstance(item, str) else item.get('path', '')
         if os.path.exists(file_path):
             self.selected_file = file_path
             self.last_clicked_path = file_path
-            self._update_version_panel()
+            
+            if instant:
+                self.deferred_analysis_time = 0
+                self._update_version_panel()
+            else:
+                # Defer analysis to keep navigation snappy
+                self.deferred_analysis_time = time.time() + 0.150
 
     def _get_current_tab(self) -> str:
         """Get the current picker tab."""

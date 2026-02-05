@@ -1,23 +1,18 @@
-# TD_Launcher
-A standalone launcher application for automatically opening TouchDesigner projects (.toe files) with the correct version.
+# TD Launcher
+A focused project dashboard for TouchDesigner. Manage your library, view documentation, and launch .toe files with the correct version automatically.
 
-### Toe autolaunch
-![image](https://user-images.githubusercontent.com/10091486/185008821-c4294500-7e1b-47d2-b3df-881519591de5.png)
+### Key Features:
+- **Version Detection:** Automatically finds the right TD build for any `.toe` file.
+- **Unified Grid:** A clean layout with split project/info views.
+- **Tab Memory:** Remembers your selection when switching between Recent Files and Templates.
+- **Docs Editor:** Built-in README panel for project documentation.
+- **Cross-Platform:** Works on macOS and Windows.
 
-### Download TD and Install from Launcher
-![image](https://user-images.githubusercontent.com/10091486/185009037-6569848a-dd25-4766-a73e-23a770b5e36b.png)
-![image](https://user-images.githubusercontent.com/10091486/185009082-c09f20f5-01b6-4d8e-9a42-9e820844a9ec.png)
-![image](https://user-images.githubusercontent.com/10091486/185009223-7d1f5840-02cb-4eae-b6b8-a26d4c8e032a.png)
-
-### Older Builds not yet supported
-![image](https://user-images.githubusercontent.com/10091486/185009295-71c275b8-c295-44d5-ac47-98c514e2f115.png)
-
-
+---
 
 ## What's this for
 
-
-If you work on a lot of TD projects, or support many older projects you know the pain of having to manage / guess / remember which version something was built in. A real pain if you accidentally upgrade your projects build and lose work when trying to downgrade back again!
+If you work on a lot of TouchDesigner projects, or maintain a library of legacy work, you know the frustration of managing multiple concurrent installations. Guessing which version a project requires—or worse, accidentally upgrading a project and losing work—is a constant risk.
 
 ## How this works
 This tool scans your computer when launched for TouchDesigner entries, and builds a list of available TD executable paths that can potentially be used. It then analyzes the .toe file and loads the GUI with the appropriate option selected, and starts a 5 second timer.

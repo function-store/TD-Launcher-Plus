@@ -17,7 +17,7 @@ except ImportError:
     HAS_DPG = False
 
 try:
-    from PIL import Image
+    from PIL import Image, ImageOps
     HAS_PIL = True
 except ImportError:
     HAS_PIL = False
@@ -139,6 +139,22 @@ def find_project_icon(project_path: str) -> Optional[str]:
             if os.path.exists(icon_path):
                 return icon_path
 
+    # Fifth, fallback to the newest image in the directory
+    try:
+        candidates = []
+        for f in os.listdir(project_dir):
+            if f.lower().endswith(('.png', '.jpg', '.jpeg')):
+                full_path = os.path.join(project_dir, f)
+                if os.path.isfile(full_path):
+                    candidates.append(full_path)
+        
+        if candidates:
+            # Pick the most recently modified one
+            candidates.sort(key=lambda x: os.path.getmtime(x), reverse=True)
+            return candidates[0]
+    except Exception:
+        pass
+
     # Not found - caller will use default
     return None
 
@@ -173,6 +189,32 @@ def read_readme_content(readme_path: str, max_length: int = 5000) -> str:
         return f"Error reading README: {e}"
 
 
+def get_project_summary(project_path: str) -> str:
+    """Get a brief summary of a project from its README.
+    
+    Returns the first non-title, non-empty line of the README.
+    """
+    readme_path = find_readme(project_path)
+    if not readme_path:
+        return ""
+        
+    try:
+        with open(readme_path, 'r', encoding='utf-8') as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith('#'):
+                    continue
+                # Found the first non-empty, non-title line
+                # Truncate if it's exceptionally long
+                if len(line) > 500:
+                    line = line[:497] + "..."
+                return line
+    except Exception:
+        pass
+        
+    return ""
+
+
 def load_icon_texture(icon_path: str, size: int = 50) -> Optional[str]:
     """Load an image and create a DearPyGui texture for it.
 
@@ -189,10 +231,10 @@ def load_icon_texture(icon_path: str, size: int = 50) -> Optional[str]:
         if dpg.does_item_exist(texture_tag):
             return texture_tag
 
-        # Load and resize image
+        # Load, crop to square, and resize in one efficient step
         img = Image.open(icon_path)
         img = img.convert('RGBA')
-        img = img.resize((size, size), Image.Resampling.LANCZOS)
+        img = ImageOps.fit(img, (size, size), Image.Resampling.LANCZOS)
 
         # Convert to flat list of floats (0-1 range)
         pixels = list(img.getdata())
@@ -233,6 +275,7 @@ def load_default_icon(size: int = 50) -> Optional[str]:
         # Try to load app icon
         app_dir = os.path.dirname(os.path.abspath(__file__))
         icon_candidates = [
+            os.path.join(app_dir, "TouchDesigner.icns"),
             os.path.join(app_dir, "td_launcher.icns"),
             os.path.join(app_dir, "td_launcher.ico"),
             os.path.join(app_dir, "td_launcher.png"),
@@ -245,7 +288,7 @@ def load_default_icon(size: int = 50) -> Optional[str]:
                     try:
                         img = Image.open(icon_path)
                         img = img.convert('RGBA')
-                        img = img.resize((size, size), Image.Resampling.LANCZOS)
+                        img = ImageOps.fit(img, (size, size), Image.Resampling.LANCZOS)
 
                         pixels = list(img.getdata())
                         flat_pixels = []

@@ -150,6 +150,12 @@ class TDManager:
             return self.versions[version].get('executable')
         return None
 
+    def get_app_path(self, version: str) -> Optional[str]:
+        """Get the .app bundle path for a version on macOS."""
+        if version in self.versions:
+            return self.versions[version].get('app_path')
+        return None
+
     def get_toeexpand_path(self) -> Optional[str]:
         """Get path to toeexpand tool from an installed TD version."""
         if platform.system() == 'Windows':
