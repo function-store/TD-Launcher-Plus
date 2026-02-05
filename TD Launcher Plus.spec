@@ -7,7 +7,11 @@ a = Analysis(
     ['td_launcher.py'],
     pathex=[],
     binaries=[],
-    datas=[('test.toe', '.')],
+    datas=[
+        ('test.toe', '.'),
+        ('td_launcher_plus.icns', '.'),
+        ('td_launcher_plus.ico', '.')
+    ],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
@@ -34,7 +38,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=['td_launcher.icns'],
+    icon=['td_launcher_plus.icns'],
 )
 coll = COLLECT(
     exe,
@@ -48,7 +52,7 @@ coll = COLLECT(
 app = BUNDLE(
     coll,
     name='TD Launcher Plus.app',
-    icon='td_launcher.icns',
+    icon='td_launcher_plus.icns',
     bundle_identifier='com.function-store.td-launcher-plus',
     info_plist={
         'CFBundleDocumentTypes': [
@@ -56,7 +60,7 @@ app = BUNDLE(
                 'CFBundleTypeName': 'TouchDesigner Environment File',
                 'CFBundleTypeRole': 'Editor',
                 'LSHandlerRank': 'Alternate',
-                'CFBundleTypeIconFile': 'td_launcher.icns',
+                'CFBundleTypeIconFile': 'td_launcher_plus.icns',
                 'LSItemContentTypes': ['ca.derivative.toe'],
                 'LSTypeIsPackage': False,
                 'CFBundleTypeExtensions': ['toe']

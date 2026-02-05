@@ -1,6 +1,7 @@
 """Utility functions for TD Launcher Plus."""
 
 import os
+import sys
 import platform
 import subprocess
 from datetime import datetime
@@ -21,6 +22,17 @@ try:
     HAS_PIL = True
 except ImportError:
     HAS_PIL = False
+
+
+def get_resource_path(relative_path: str) -> str:
+    """Get absolute path to resource, works for dev and for PyInstaller."""
+    try:
+        # PyInstaller creates a temp folder and stores path in _MEIPASS
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.dirname(os.path.abspath(__file__))
+
+    return os.path.join(base_path, relative_path)
 
 
 def format_file_modified_time(file_path: str) -> str:
@@ -327,12 +339,9 @@ def load_default_icon(size: int = 50) -> Optional[str]:
 
     try:
         # Try to load app icon
-        app_dir = os.path.dirname(os.path.abspath(__file__))
         icon_candidates = [
-            os.path.join(app_dir, "TouchDesigner.icns"),
-            os.path.join(app_dir, "td_launcher.icns"),
-            os.path.join(app_dir, "td_launcher.ico"),
-            os.path.join(app_dir, "td_launcher.png"),
+            get_resource_path("td_launcher_plus.icns"),
+            get_resource_path("td_launcher_plus.ico"),
         ]
 
         icon_loaded = False

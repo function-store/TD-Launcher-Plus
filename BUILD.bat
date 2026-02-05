@@ -7,8 +7,8 @@ set PYTHON_EXECUTABLE=.\py\python.exe
 %PYTHON_EXECUTABLE% .\py\Scripts\pyinstaller.exe --noconfirm --log-level=WARN ^
 --onefile --nowindow ^
 --windowed ^
---name="td_launcher" ^
---icon="td_launcher.ico" ^
+--name="td_launcher_plus" ^
+--icon="td_launcher_plus.ico" ^
 --add-binary="toeexpand/toeexpand.exe;toeexpand" ^
 --add-binary="test.toe;." ^
 --add-binary="toeexpand/iconv.dll;toeexpand" ^
