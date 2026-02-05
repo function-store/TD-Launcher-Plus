@@ -16,10 +16,10 @@ If you work on a lot of TouchDesigner projects, or maintain a library of legacy 
 
 ## How this works
 
-TD Launcher operates in two primary modes depending on how it's opened:
+TD Launcher Plus operates in two primary modes depending on how it's opened:
 
 ### 1. Automatic Launch Mode
-When you open a `.toe` file with TD Launcher (via double-click or drag-and-drop), it instantly analyzes the file to find the required TouchDesigner version. It then presents a 5-second countdown timer.
+When you open a `.toe` file with TD Launcher Plus (via double-click or drag-and-drop), it instantly analyzes the file to find the required TouchDesigner version. It then presents a 5-second countdown timer.
 - **Auto-launch:** If left undisturbed, the project opens in the detected version automatically.
 - **Interruption:** Clicking anywhere or pressing a key stops the timer, allowing you to manually override the TD version or view project notes.
 
@@ -33,35 +33,35 @@ Launching the app directly opens the project dashboard. Here you can browse your
 
 ### Windows
 1. Download the installer from the releases page on the right
-2. Run the installer to install TD Launcher
-3. Set Windows to open `.toe` files with TD Launcher by default
-4. Double-clicking `.toe` files will now launch them with TD Launcher
+2. Run the installer to install TD Launcher Plus
+3. Set Windows to open `.toe` files with TD Launcher Plus by default
+4. Double-clicking `.toe` files will now launch them with TD Launcher Plus
 
 ### macOS
 1. Download the `.dmg` file from the releases page
-2. Open the DMG and drag "TD Launcher" to the "Applications" folder
-3. **File association is automatic!** TD Launcher will appear as an option for `.toe` files
-4. **Optional:** To make it the default, right-click any `.toe` file → "Get Info" → set "Open with" to "TD Launcher" → "Change All..."
-5. Double-clicking `.toe` files will now launch them with TD Launcher
+2. Open the DMG and drag "TD Launcher Plus" to the "Applications" folder
+3. **File association is automatic!** TD Launcher Plus will appear as an option for `.toe` files
+4. **Optional:** To make it the default, right-click any `.toe` file → "Get Info" → set "Open with" to "TD Launcher Plus" → "Change All..."
+5. Double-clicking `.toe` files will now launch them with TD Launcher Plus
 
 ### Alternative Usage
-You can also drag and drop `.toe` files directly onto the TD Launcher app icon.
+You can also drag and drop `.toe` files directly onto the TD Launcher Plus app icon.
 
 ---
 
 ## Features
 
 ### Automatic Version Detection
-TD Launcher analyzes each `.toe` file to determine which TouchDesigner version it was created with, then launches it with the correct version automatically.
+TD Launcher Plus analyzes each `.toe` file to determine which TouchDesigner version it was created with, then launches it with the correct version automatically.
 
 - **Auto-launch timer:** After selecting a file, a 5-second countdown begins before launching
 - **Click to interrupt:** Click anywhere to stop the countdown and manually select a different version
-- **Missing version handling:** If the required version isn't installed, TD Launcher shows a download link and lets you choose an alternative version
+- **Missing version handling:** If the required version isn't installed, TD Launcher Plus shows a download link and lets you choose an alternative version
 
 ### Recent Files
-TD Launcher keeps track of recently opened projects. When you launch a `.toe` file, it's automatically added to the Recent Files list for quick access later.
+TD Launcher Plus keeps track of recently opened projects. When you launch a `.toe` file, it's automatically added to the Recent Files list for quick access later.
 
-**Versioned files:** TouchDesigner auto-saves create versioned files like `project.7.toe`, `project.8.toe`, etc. TD Launcher intelligently handles these:
+**Versioned files:** TouchDesigner auto-saves create versioned files like `project.7.toe`, `project.8.toe`, etc. TD Launcher Plus intelligently handles these:
 - Versioned files are displayed as their non-versioned counterpart (e.g., `project.7.toe` shows as `project.toe`)
 - Multiple versions of the same project appear only once in the list
 - Files in a `Backup/` folder are shown with a `Backup/` prefix
@@ -74,14 +74,14 @@ Save frequently-used project templates for quick access. Templates appear in a s
 - Remove templates with the **X** button
 
 ### Project Icons
-TD Launcher can display project icons next to each file. Enable with the **"Show Icons"** checkbox.
+TD Launcher Plus can display project icons next to each file. Enable with the **"Show Icons"** checkbox.
 
 **Icon search order** (first found is used):
 1. `icon.png` / `icon.jpg` / `icon.jpeg` in the project folder
 2. `icon_temp.png` / `icon_temp.jpg` / `icon_temp.jpeg` (for auto-generated icons)
 3. `<projectname>.png` / `.jpg` / `.jpeg` (e.g., `MyProject.png` for `MyProject.toe`)
 4. `<projectname_without_version>.png` (e.g., `MyProject.png` for `MyProject.7.toe`)
-5. Falls back to the TD Launcher app icon
+5. Falls back to the TD Launcher Plus app icon
 
 ### Project Info Panel
 Enable **"Show Info"** to display an editable README panel alongside the file picker.
@@ -92,11 +92,11 @@ Enable **"Show Info"** to display an editable README panel alongside the file pi
 - Click **View** to open the README rendered as HTML in your default browser
 
 ### TouchDesigner Utility Component
-A companion TouchDesigner component (`TDLauncherUtility.toe`) is included that integrates with TD Launcher:
+A companion TouchDesigner component (`TDLauncherUtility.toe`) is included that integrates with TD Launcher Plus:
 
 - **Export project icon:** Automatically exports a thumbnail from your project as `icon_temp.png`
-- **Update recent files:** Notifies TD Launcher when you save, keeping the recent files list current
-- **Quick access:** Open TD Launcher directly from within TouchDesigner
+- **Update recent files:** Notifies TD Launcher Plus when you save, keeping the recent files list current
+- **Quick access:** Open TD Launcher Plus directly from within TouchDesigner
 
 To use: Import `TDLauncherUtility.toe` into your project or add it to your palette.
 
@@ -149,7 +149,7 @@ cd TD-Launcher-Mac
 ./BUILD_mac_simple.sh
 ```
 - Quick build for testing
-- Creates `dist/TD Launcher.app`
+- Creates `dist/TD Launcher Plus.app`
 - Includes debug logging support
 
 **Distribution Build:**
@@ -166,7 +166,7 @@ cd TD-Launcher-Mac
 ```bash
 # Test built app bundle with debug logging
 export TD_LAUNCHER_DEBUG=1
-open "dist/TD Launcher.app" --args test.toe
+open "dist/TD Launcher Plus.app" --args test.toe
 
 
 ```
@@ -183,13 +183,13 @@ python3 td_launcher.py test.toe
 The built app automatically includes file association support for `.toe` files. After building:
 
 1. **Install the app:**
-   - Copy `dist/TD Launcher.app` to `/Applications/`
+   - Copy `dist/TD Launcher Plus.app` to `/Applications/`
    - Or install via the DMG (distribution build)
 
 2. **Set as default (if needed):**
    - Right-click any `.toe` file
    - Select "Get Info"
-   - In "Open with" section, select "TD Launcher"
+   - In "Open with" section, select "TD Launcher Plus"
    - Click "Change All..." to set as default
 
 **Note:** File associations activate automatically when the app is in `/Applications/`. No manual registration required.
@@ -216,7 +216,7 @@ The build process requires these Python packages (automatically installed by `se
 
 **File association not working:**
 - Ensure app is installed in `/Applications/`
-- Try: Right-click `.toe` file → "Open With" → "TD Launcher"
+- Try: Right-click `.toe` file → "Open With" → "TD Launcher Plus"
 - Restart Finder: `killall Finder`
 - Enable debug logging: `export TD_LAUNCHER_DEBUG=1` and check `~/Desktop/td_launcher_debug.log`
 
@@ -226,7 +226,7 @@ The build process requires these Python packages (automatically installed by `se
 
 ### Platform-Specific TOE File Analysis
 
-TD Launcher uses TouchDesigner's `toeexpand` utility to analyze `.toe` files and determine the required TouchDesigner version. The implementation differs between platforms:
+TD Launcher Plus uses TouchDesigner's `toeexpand` utility to analyze `.toe` files and determine the required TouchDesigner version. The implementation differs between platforms:
 
 #### Windows
 - **Bundled approach**: Uses the `toeexpand.exe` included in the `toeexpand/` directory
@@ -252,7 +252,7 @@ This approach ensures optimal compatibility on each platform while maintaining t
 
 # Contributors
 
-- (Lucas Morgan)[https://www.enviral-design.com/] - original TD Launcher with version picker
+- (Lucas Morgan)[https://www.enviral-design.com/] - original TD Launcher Plus with version picker
 - (Dan Molnar / Function Store)[https://functionstore.xyz/link-in-bio](Cross platform implementation and "Plus" version including recent files, templates, icons, readme, utility
 - (Keith Lostracco)[https://github.com/keithlostracco] - Daily build signature support
 

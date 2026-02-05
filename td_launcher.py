@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""TD Launcher - TouchDesigner project launcher with version management."""
+"""TD Launcher Plus - TouchDesigner project launcher with version management."""
 
 import os
 import sys
@@ -7,6 +7,7 @@ import time
 import platform
 import subprocess
 import logging
+import threading
 from typing import Optional
 from urllib.request import urlretrieve
 
@@ -17,6 +18,7 @@ from td_manager import TDManager
 from utils import (
     format_file_modified_time,
     show_native_file_picker,
+    show_native_file_picker_multiple,
     find_project_icon,
     find_readme,
     read_readme_content,
@@ -38,7 +40,7 @@ logger = logging.getLogger(__name__)
 
 
 class LauncherApp:
-    """Main TD Launcher application."""
+    """Main TD Launcher Plus application."""
 
     def __init__(self, toe_file: Optional[str] = None):
         # Core components
@@ -61,10 +63,12 @@ class LauncherApp:
         self.last_click_time = 0.0
         self.last_clicked_path: Optional[str] = None
         self.tab_selection_indices = {'recent': -1, 'templates': -1}
-        self.visible_recent_files = []
-        self.visible_templates = []
         self.selection_focus = 'versions' if toe_file else 'picker'
         self.deferred_analysis_time = 0.0
+        self.analysis_thread = None
+        self.current_analysis_id = 0
+        self.analysis_status = "idle" # "idle", "loading", "ready_for_ui"
+        self.active_highlight_tags = set()
 
         # Icon cache
         self.icon_textures = {}
@@ -81,9 +85,12 @@ class LauncherApp:
         self.mono_font = None
         self.readme_wrapped: bool = True
 
+        # Version analysis cache (path -> build_info)
+        self.version_cache: dict = {}
+
     def run(self):
         """Run the application."""
-        logger.info(f"TD Launcher {APP_VERSION}")
+        logger.info(f"TD Launcher Plus v{APP_VERSION}")
         logger.info(f"Platform: {platform.system()}")
         logger.info(f"Found {len(self.td_manager.versions)} TD installations")
 
@@ -134,9 +141,9 @@ class LauncherApp:
         # Create viewport
         info_width = 1190 if self.config.show_readme else 630
         dpg.create_viewport(
-            title=f'TD Launcher 2.0',
+            title=f'TD Launcher Plus',
             width=info_width,
-            height=550,
+            height=650,
             resizable=True
         )
         dpg.setup_dearpygui()
@@ -161,27 +168,86 @@ class LauncherApp:
         dpg.destroy_context()
 
     def _analyze_toe_file(self, file_path: str):
-        """Analyze a .toe file to get version info."""
-        try:
-            self.build_info = self.td_manager.inspect_toe_file(file_path)
-            if self.build_info:
-                parts = self.build_info.split('.')
-                if len(parts) > 1:
-                    self.build_year = int(parts[1])
-                self.td_url = self.td_manager.generate_download_url(self.build_info)
-                if self.td_url:
-                    self.td_filename = self.td_url.split("/")[-1]
-                    if platform.system() == 'Darwin':
-                        toe_dir = os.path.dirname(os.path.abspath(file_path))
-                        self.td_uri = os.path.join(toe_dir, self.td_filename)
-                    else:
-                        self.td_uri = os.path.join(os.getcwd(), self.td_filename)
-        except Exception as e:
-            logger.error(f"Failed to analyze TOE file: {e}")
+        """Analyze a .toe file, using cache if available."""
+        abs_path = os.path.abspath(file_path)
+
+        # Check cache first
+        if abs_path in self.version_cache:
+            cached = self.version_cache[abs_path]
+            self.build_info = cached.get('build_info')
+            self.build_year = cached.get('build_year')
+            self.td_url = cached.get('td_url')
+            self.td_uri = cached.get('td_uri')
+            self.td_filename = cached.get('td_filename')
+            self.analysis_status = "ready_for_ui"
+            return
+
+        # Not in cache - analyze in background
+        self.current_analysis_id += 1
+        analysis_id = self.current_analysis_id
+        self.analysis_status = "loading"
+
+        def _worker(path, aid):
+            try:
+                build_info = self.td_manager.inspect_toe_file(path)
+
+                # Only apply if this is still the active analysis
+                if aid == self.current_analysis_id:
+                    self.build_info = build_info
+                    build_year = None
+                    td_url = None
+                    td_uri = None
+                    td_filename = None
+
+                    if self.build_info:
+                        parts = self.build_info.split('.')
+                        if len(parts) > 1:
+                            try:
+                                build_year = int(parts[1])
+                            except ValueError:
+                                pass
+                        td_url = self.td_manager.generate_download_url(self.build_info)
+                        if td_url:
+                            td_filename = td_url.split("/")[-1]
+                            toe_dir = os.path.dirname(os.path.abspath(path))
+                            td_uri = os.path.join(toe_dir, td_filename)
+
+                    self.build_year = build_year
+                    self.td_url = td_url
+                    self.td_uri = td_uri
+                    self.td_filename = td_filename
+
+                    # Store in cache
+                    self.version_cache[abs_path] = {
+                        'build_info': self.build_info,
+                        'build_year': build_year,
+                        'td_url': td_url,
+                        'td_uri': td_uri,
+                        'td_filename': td_filename
+                    }
+
+                    self.analysis_status = "ready_for_ui"
+            except Exception as e:
+                logger.error(f"Background analysis failed: {e}")
+                if aid == self.current_analysis_id:
+                    self.analysis_status = "ready_for_ui"
+
+        thread = threading.Thread(target=_worker, args=(file_path, analysis_id), daemon=True)
+        thread.start()
+        self.analysis_thread = thread
 
     # =========================================================================
     # UI Building
     # =========================================================================
+
+    def _set_row_highlight(self, tag: str, state: bool):
+        """Helper to set highlight state and track active tags."""
+        if dpg.does_item_exist(tag):
+            dpg.set_value(tag, state)
+            if state:
+                self.active_highlight_tags.add(tag)
+            elif tag in self.active_highlight_tags:
+                self.active_highlight_tags.remove(tag)
 
     def _build_ui(self):
         """Build the main UI."""
@@ -195,74 +261,45 @@ class LauncherApp:
             dpg.add_item_clicked_handler(callback=self._on_row_clicked)
 
         with dpg.window(tag="Primary Window", no_scrollbar=True, no_move=True):
-            dpg.add_text(f'TD Launcher {APP_VERSION}', color=[50, 255, 0, 255])
+            dpg.add_text(f'TD Launcher Plus {APP_VERSION}', color=[50, 255, 0, 255])
             dpg.add_separator()
 
-            # Main layout - use table only if readme shown, otherwise simple group
-            if show_readme:
-                with dpg.table(
-                    tag="main_layout_table",
-                    header_row=False,
-                    borders_innerV=False,
-                    borders_outerV=False,
-                    borders_innerH=False,
-                    borders_outerH=False,
-                    no_pad_outerX=True,
-                    no_pad_innerX=True,
-                    policy=dpg.mvTable_SizingStretchProp
-                ):
-                    dpg.add_table_column(width_stretch=True, init_width_or_weight=1.0)
-                    dpg.add_table_column(tag="readme_column", width_fixed=True, init_width_or_weight=545)
+            # Always use same structure - just hide readme elements when not needed
+            with dpg.group(tag="main_ui_group"):
+                # Tab bar
+                with dpg.tab_bar(tag="file_picker_tabs", callback=self._on_tab_changed):
+                    dpg.add_tab(label="Recent Files", tag="recent_files_tab")
+                    dpg.add_tab(label="Templates", tag="templates_tab")
 
-                    # --- ROW 1: HEADERS ---
-                    with dpg.table_row():
-                        with dpg.group():
-                            with dpg.tab_bar(tag="file_picker_tabs", callback=self._on_tab_changed):
-                                dpg.add_tab(label="Recent Files", tag="recent_files_tab")
-                                dpg.add_tab(label="Templates", tag="templates_tab")
-                        with dpg.group():
-                            dpg.add_spacer(height=6)
-                            with dpg.group(horizontal=True):
-                                dpg.add_spacer(width=12)
-                                dpg.add_text("Project Info", color=[200, 200, 200, 255])
-                    
-                    # --- ROW 2: SEPARATOR ---
-                    with dpg.table_row():
-                        dpg.add_separator()
-                        dpg.add_separator()
+                # Controls row
+                with dpg.group(horizontal=True):
+                    dpg.add_button(label="Browse...", tag="browse_btn_recent", callback=self._on_browse)
+                    dpg.add_checkbox(label="Show Icons", tag="show_icons_checkbox", default_value=show_icons, callback=self._on_toggle_icons)
+                    dpg.add_checkbox(label="Show Info", tag="show_readme_checkbox", default_value=show_readme, callback=self._on_toggle_readme)
 
-                    # --- ROW 3: CONTROLS ---
-                    with dpg.table_row():
-                        with dpg.group(horizontal=True):
-                            dpg.add_button(label="Browse...", tag="browse_btn_recent", callback=self._on_browse)
-                            dpg.add_checkbox(label="Show Icons", tag="show_icons_checkbox", default_value=show_icons, callback=self._on_toggle_icons)
-                            dpg.add_checkbox(label="Show Info", tag="show_readme_checkbox", default_value=show_readme, callback=self._on_toggle_readme)
-                        with dpg.group():
-                            dpg.add_spacer(height=4)
-                            with dpg.group(horizontal=True):
-                                dpg.add_spacer(width=12)
-                                dpg.add_text("Select a file...", tag="readme_status_text", color=[150, 150, 150, 255])
-
-                    # --- ROW 4: SEPARATOR ---
-                    with dpg.table_row():
+                # Main content area - horizontal layout when readme shown
+                with dpg.group(horizontal=show_readme, tag="content_layout"):
+                    # Left side - file picker and version panel
+                    with dpg.group(tag="left_panel"):
+                        # File lists
+                        with dpg.child_window(height=280, width=600 if show_readme else -1, tag="recent_files_list", horizontal_scrollbar=True):
+                            self._build_recent_files_list()
+                        with dpg.child_window(height=280, width=600 if show_readme else -1, tag="templates_list", horizontal_scrollbar=True, show=False):
+                            self._build_templates_list()
+                        self._apply_template_theme()
                         dpg.add_separator()
-                        dpg.add_separator()
+                        # Version panel
+                        with dpg.child_window(height=220, width=600 if show_readme else -1, tag="version_panel"):
+                            pass  # Content will be added by _update_version_panel calls
 
-                    # --- ROW 5: MAIN CONTENT ---
-                    with dpg.table_row():
-                        with dpg.group():
-                            # Reduced heights to fit within 550px viewport
-                            with dpg.child_window(height=135, width=-1, tag="recent_files_list", horizontal_scrollbar=True):
-                                self._build_recent_files_list()
-                            with dpg.child_window(height=135, width=-1, tag="templates_list", horizontal_scrollbar=True, show=False):
-                                self._build_templates_list()
+                    # Right side - README panel (only when show_readme)
+                    if show_readme:
+                        with dpg.child_window(tag="readme_container", width=540, height=510, border=False):
+                            dpg.add_text("Project Info", color=[200, 200, 200, 255])
                             dpg.add_separator()
-                            with dpg.child_window(height=205, width=-1, tag="version_panel"):
-                                pass # Content will be added by _update_version_panel calls
-                        
-                        # README Editor - height should match left side (135 + 8 sep + 205 = 348)
-                        with dpg.child_window(tag="readme_container", width=540, height=348, border=False):
-                            with dpg.child_window(tag="readme_scroll_parent", width=-1, height=-1, horizontal_scrollbar=True):
+                            dpg.add_text("Select a file...", tag="readme_status_text", color=[150, 150, 150, 255])
+                            dpg.add_separator()
+                            with dpg.child_window(tag="readme_scroll_parent", width=-1, height=390, horizontal_scrollbar=True):
                                 with dpg.group(horizontal=True, tag="readme_content_group"):
                                     with dpg.group():
                                         dpg.add_spacer(height=5)
@@ -271,28 +308,21 @@ class LauncherApp:
                                         tag="readme_content_text",
                                         multiline=True,
                                         width=2000 if not self.readme_wrapped else -1,
-                                        height=400, # Will be synced
+                                        height=400,
                                         callback=self._on_readme_changed,
                                         on_enter=False
                                     )
+                            dpg.add_separator()
+                            with dpg.group(horizontal=True):
+                                dpg.add_button(label="Save", tag="readme_save_button", callback=self._on_save_readme, show=False)
+                                dpg.add_button(label="View", tag="readme_view_button", callback=self._on_view_readme, show=False)
+                                dpg.add_button(label="Wrap: ON", tag="readme_wrap_toggle", callback=self._on_toggle_readme_wrap, show=False)
 
-                    # --- ROW 6: SEPARATOR ---
-                    with dpg.table_row():
-                        dpg.add_separator()
-                        dpg.add_separator()
+                dpg.add_separator()
+                self._build_launch_button()
 
-                    # --- ROW 7: FOOTER ---
-                    with dpg.table_row():
-                        with dpg.group():
-                            self._build_launch_button()
-                        with dpg.group(horizontal=True):
-                            # Center-align buttons vertically with the launch button
-                            dpg.add_spacer(height=5)
-                            dpg.add_button(label="Save", tag="readme_save_button", callback=self._on_save_readme, show=False)
-                            dpg.add_button(label="View", tag="readme_view_button", callback=self._on_view_readme, show=False)
-                            dpg.add_button(label="Wrap: ON", tag="readme_wrap_toggle", callback=self._on_toggle_readme_wrap, show=False)
-
-                # Theme for solid backgrounds
+            # Theme for readme panel
+            if show_readme:
                 with dpg.theme() as info_theme:
                     with dpg.theme_component(dpg.mvChildWindow):
                         dpg.add_theme_color(dpg.mvThemeCol_ChildBg, [28, 28, 28, 255])
@@ -304,20 +334,14 @@ class LauncherApp:
 
                 dpg.bind_item_theme("readme_container", info_theme)
                 dpg.bind_item_theme("readme_content_text", info_theme)
-            else:
-                with dpg.group(tag="main_ui_group"):
-                    self._build_file_picker_section(show_icons, show_readme)
-                    dpg.add_separator()
-                    self._build_version_panel()
-                    dpg.add_separator()
-                    self._build_launch_button()
 
         dpg.set_primary_window("Primary Window", True)
 
         # If file was provided or we have recent files, select the first one visually
         # This also populates the version panel and README
         if self.visible_recent_files:
-            self._move_picker_selection(1)
+            # Force instant update at startup so UI is ready before first keypress
+            self._move_picker_selection(1, instant=True)
         elif self.selected_file and self.toe_file:
             # Backup for when file provided but config empty (rare)
             self._update_version_panel()
@@ -345,14 +369,14 @@ class LauncherApp:
                         default_value=show_readme,
                         callback=self._on_toggle_readme
                     )
-                with dpg.child_window(height=150, width=-1, tag="recent_files_list", horizontal_scrollbar=True):
+                with dpg.child_window(height=280, width=-1, tag="recent_files_list", horizontal_scrollbar=True):
                     self._build_recent_files_list()
 
             # Templates Tab
             with dpg.tab(label="Templates", tag="templates_tab"):
                 with dpg.group(horizontal=True):
                     dpg.add_button(
-                        label="Add Template...",
+                        label="Add Templates...",
                         callback=self._on_add_template,
                         tag="add_template_btn"
                     )
@@ -368,8 +392,31 @@ class LauncherApp:
                         default_value=show_readme,
                         callback=self._on_toggle_readme
                     )
-                with dpg.child_window(height=150, width=-1, tag="templates_list", horizontal_scrollbar=True):
+                with dpg.child_window(height=280, width=-1, tag="templates_list", horizontal_scrollbar=True):
                     self._build_templates_list()
+                self._apply_template_theme()
+
+    def _apply_template_theme(self):
+        """Apply distinct theme to templates list."""
+        if not dpg.does_item_exist("templates_list"):
+            return
+
+        # Check if theme already exists
+        if dpg.does_item_exist("template_list_theme"):
+            dpg.bind_item_theme("templates_list", "template_list_theme")
+            return
+
+        with dpg.theme(tag="template_list_theme"):
+            dark_green = [26, 40, 28, 166]
+            with dpg.theme_component(dpg.mvChildWindow):
+                # Subtle dark pine green [26, 40, 28, 255]
+                dpg.add_theme_color(dpg.mvThemeCol_ChildBg, dark_green)
+            with dpg.theme_component(dpg.mvAll):
+                dpg.add_theme_color(dpg.mvThemeCol_ChildBg, dark_green)
+                dpg.add_theme_color(dpg.mvThemeCol_WindowBg, dark_green)
+                dpg.add_theme_color(dpg.mvThemeCol_FrameBg, dark_green)
+
+        dpg.bind_item_theme("templates_list", "template_list_theme")
 
     def _is_versioned_toe(self, filename: str) -> bool:
         """Check if filename has .number.toe format (e.g., project.7.toe)."""
@@ -508,7 +555,7 @@ class LauncherApp:
 
         if not templates:
             dpg.add_text(
-                "No templates added yet.\nClick 'Add Template...' or drag a .toe file onto the app icon.",
+                "No templates added yet.\nClick 'Add Templates...' or drag a .toe file onto the app icon.",
                 parent="templates_list",
                 color=[150, 150, 150, 255]
             )
@@ -578,7 +625,7 @@ class LauncherApp:
 
     def _build_version_panel(self):
         """Build the version panel section."""
-        with dpg.child_window(height=250, width=-1, tag="version_panel"):
+        with dpg.child_window(height=220, width=-1, tag="version_panel"):
             dpg.add_text(
                 "Select a file above to see version info",
                 color=[150, 150, 150, 255]
@@ -702,9 +749,21 @@ class LauncherApp:
             self.countdown_enabled = False
             return
 
-        # Analyze the file (unless skipped)
+        # Analyze the file (unless skipped or already loading)
         if not skip_analysis:
+            self.build_info = None # Reset while loading
             self._analyze_toe_file(self.selected_file)
+
+        if self.analysis_status == "loading":
+            dpg.add_text(
+                "Loading build info...",
+                parent="version_panel",
+                color=[150, 150, 0, 255]
+            )
+            if dpg.does_item_exist("launch_button"):
+                dpg.configure_item("launch_button", enabled=False)
+                dpg.configure_item("launch_button", label="Analyzing file...")
+            return
 
         if not self.build_info:
             dpg.add_text(
@@ -777,7 +836,7 @@ class LauncherApp:
             version_keys[0] if version_keys else None
         )
 
-        with dpg.child_window(height=100, width=-1, parent="version_panel", tag="td_version_container"):
+        with dpg.child_window(height=150, width=-1, parent="version_panel", tag="td_version_container"):
             dpg.add_radio_button(
                 version_keys,
                 default_value=default_version,
@@ -1230,7 +1289,7 @@ class LauncherApp:
             if dpg.does_item_exist("templates_list"):
                 dpg.configure_item("templates_list", show=True)
             if dpg.does_item_exist("browse_btn_recent"):
-                dpg.configure_item("browse_btn_recent", label="Add Template...", callback=self._on_add_template)
+                dpg.configure_item("browse_btn_recent", label="Add Templates...", callback=self._on_add_template)
 
         # Restore selection for the newly active tab
         self.selection_focus = 'picker'
@@ -1361,8 +1420,9 @@ class LauncherApp:
         
         # Clear all selections
         self._clear_all_selections()
-        if sender and dpg.does_item_exist(sender):
-            dpg.set_value(sender, True)
+        if sender:
+            self._set_row_highlight(sender, True)
+            
             # Sync index if sender is a numbered list item
             try:
                 parts = sender.split('_')
@@ -1410,9 +1470,10 @@ class LauncherApp:
 
     def _on_add_template(self, sender, app_data):
         """Handle add template button click."""
-        file_path = show_native_file_picker("Select TouchDesigner Project Template")
-        if file_path:
-            self.config.add_template(file_path)
+        file_paths = show_native_file_picker_multiple("Select TouchDesigner Project Templates")
+        if file_paths:
+            for file_path in file_paths:
+                self.config.add_template(file_path)
             self._build_templates_list()
 
     def _on_remove_recent(self, sender, app_data, user_data):
@@ -1446,6 +1507,7 @@ class LauncherApp:
         saved_file = self.selected_file
         saved_build_info = self.build_info
         saved_tab = self._get_current_tab()
+        saved_indices = self.tab_selection_indices.copy()
 
         # Clear selected file before rebuild so _build_ui doesn't analyze
         self.selected_file = None
@@ -1453,26 +1515,36 @@ class LauncherApp:
         # Rebuild UI with new layout
         if dpg.does_item_exist("Primary Window"):
             dpg.delete_item("Primary Window")
-        
+
         # Resize viewport before rebuild
         if app_data:
             dpg.set_viewport_width(1190)
         else:
             dpg.set_viewport_width(630)
-            
+
         self._build_ui()
 
         # Restore state without re-analyzing
         self.selected_file = saved_file
         self.build_info = saved_build_info
+        self.tab_selection_indices = saved_indices
+
         if saved_file:
             # Just rebuild version panel UI, don't re-analyze
             self._rebuild_version_panel_ui()
 
-        # Switch to correct tab
+        # Switch to correct tab and restore visual selection
         if saved_tab == 'templates' and dpg.does_item_exist("templates_tab"):
             templates_id = dpg.get_alias_id("templates_tab")
             dpg.set_value("file_picker_tabs", templates_id)
+            # Show templates list, hide recent files list
+            if dpg.does_item_exist("templates_list"):
+                dpg.configure_item("templates_list", show=True)
+            if dpg.does_item_exist("recent_files_list"):
+                dpg.configure_item("recent_files_list", show=False)
+
+        # Restore visual selection highlight (instant=True skips deferred analysis)
+        self._restore_selection_highlight()
 
     def _on_launch(self, sender, app_data):
         """Handle launch button click."""
@@ -1555,15 +1627,12 @@ class LauncherApp:
     # =========================================================================
 
     def _clear_all_selections(self):
-        """Clear all selectable states in the visible lists."""
-        for i in range(len(self.visible_recent_files)):
-            tag = f"recent_file_{i}"
+        """Clear all active selections efficiently."""
+        # Use set to clear only what is active instead of scanning all rows
+        for tag in list(self.active_highlight_tags):
             if dpg.does_item_exist(tag):
                 dpg.set_value(tag, False)
-        for i in range(len(self.visible_templates)):
-            tag = f"template_{i}"
-            if dpg.does_item_exist(tag):
-                dpg.set_value(tag, False)
+        self.active_highlight_tags.clear()
 
     def _confirm_and_remove(self, file_path: str, list_type: str = None):
         """Confirm and remove a file from a list."""
@@ -1613,6 +1682,11 @@ class LauncherApp:
 
     def _update_countdown(self):
         """Update the countdown timer and handle debounced analysis."""
+        # Handle background analysis completion
+        if self.analysis_status == "ready_for_ui":
+            self.analysis_status = "idle"
+            self._update_version_panel(skip_analysis=True)
+
         # Handle debounced analysis
         if self.deferred_analysis_time > 0 and time.time() > self.deferred_analysis_time:
             self.deferred_analysis_time = 0
@@ -1674,7 +1748,7 @@ class LauncherApp:
         self._clear_all_selections()
         tag = f"{prefix}{self.tab_selection_indices[current_tab]}"
         if dpg.does_item_exist(tag):
-            dpg.set_value(tag, True)
+            self._set_row_highlight(tag, True)
             
             # Scroll to selection
             container = "recent_files_list" if current_tab == 'recent' else "templates_list"
@@ -1686,7 +1760,7 @@ class LauncherApp:
                 target_y = self.tab_selection_indices[current_tab] * row_h
                 
                 curr_scroll = dpg.get_y_scroll(container)
-                page_h = 150 # Visible area height
+                page_h = 280  # Consistent height for both modes
                 
                 # If we're moving Up and selection is above the fold
                 if target_y < curr_scroll:
@@ -1708,6 +1782,30 @@ class LauncherApp:
             else:
                 # Defer analysis to keep navigation snappy
                 self.deferred_analysis_time = time.time() + 0.150
+
+    def _restore_selection_highlight(self):
+        """Restore visual selection highlight without triggering analysis."""
+        current_tab = self._get_current_tab()
+
+        if current_tab == 'recent':
+            items = self.visible_recent_files
+            prefix = "recent_file_"
+        else:
+            items = self.visible_templates
+            prefix = "template_"
+
+        if not items:
+            return
+
+        idx = self.tab_selection_indices.get(current_tab, -1)
+        if idx < 0 or idx >= len(items):
+            return
+
+        # Update visual selection only
+        self._clear_all_selections()
+        tag = f"{prefix}{idx}"
+        if dpg.does_item_exist(tag):
+            self._set_row_highlight(tag, True)
 
     def _move_version_selection(self, step: int):
         """Move version selection up or down."""
@@ -1733,20 +1831,28 @@ class LauncherApp:
             row_h = 22 # Standard radio row height
             target_y = new_idx * row_h
             curr_scroll = dpg.get_y_scroll("td_version_container")
-            page_h = 100 # Height as defined in _update_version_panel
+            page_h = 150 # Height as defined in _update_version_panel (synced)
             
             if target_y < curr_scroll:
                 dpg.set_y_scroll("td_version_container", target_y)
             elif target_y + row_h > curr_scroll + page_h:
                 dpg.set_y_scroll("td_version_container", target_y + row_h - page_h)
 
+    # =========================================================================
+    # Helpers
+    # =========================================================================
+
     def _get_current_tab(self) -> str:
         """Get the current picker tab."""
         try:
             if dpg.does_item_exist("file_picker_tabs"):
                 current = dpg.get_value("file_picker_tabs")
-                templates_id = dpg.get_alias_id("templates_tab")
-                if current == templates_id:
+                # DPG can return alias string OR int ID depending on version/context
+                # Safer to check if it matches the "Templates" tab ID/Alias
+                templates_alias = "templates_tab"
+                templates_id = dpg.get_alias_id(templates_alias)
+                
+                if current == templates_alias or current == templates_id:
                     return 'templates'
         except Exception:
             pass

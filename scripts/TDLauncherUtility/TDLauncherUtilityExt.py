@@ -20,7 +20,7 @@ class TDLauncherUtilityExt:
 		system = platform.system()
 		if system == 'Windows':
 			base = os.environ.get('APPDATA', os.path.expanduser('~'))
-			config_dir = os.path.join(base, 'TD Launcher')
+			config_dir = os.path.join(base, 'TD Launcher Plus')
 		elif system == 'Darwin':  # macOS
 			config_dir = os.path.expanduser('~/.config/td-launcher')
 		else:

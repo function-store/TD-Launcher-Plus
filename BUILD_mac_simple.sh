@@ -4,7 +4,7 @@
 
 set -e
 
-echo "Building TD Launcher (Mac - Simple)..."
+echo "Building TD Launcher Plus (Mac - Simple)..."
 
 # Activate virtual environment if it exists
 if [ -d "td_launcher_env" ]; then
@@ -31,11 +31,11 @@ echo "Cleaning previous builds..."
 rm -rf build/ dist/
 
 echo "Building app bundle..."
-pyinstaller --noconfirm --log-level=WARN "TD Launcher.spec"
+pyinstaller --noconfirm --log-level=WARN "TD Launcher Plus.spec"
 
 echo ""
 echo "✅ Build completed!"
-echo "📱 App bundle: dist/TD Launcher.app"
+echo "📱 App bundle: dist/TD Launcher Plus.app"
 echo ""
 echo "🧪 To test:"
-echo "   open 'dist/TD Launcher.app'"
+echo "   open 'dist/TD Launcher Plus.app'"

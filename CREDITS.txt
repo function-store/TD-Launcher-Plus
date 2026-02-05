@@ -1,4 +1,4 @@
-TD Launcher — Credits
+TD Launcher Plus — Credits
 
 Original Project:
 - Lucas Morgan (Enviral Design)
@@ -10,7 +10,7 @@ Thank you to everyone who contributed to this project.
 Contributors:
 
 - Lucas Morgan (@enviraldesign)
-  - Architected the original TD Launcher core, version detection, and auto-launch systems.
+  - Architected the original TD Launcher Plus core, version detection, and auto-launch systems.
 
 - Dan Molnar / Function Store (@function-store)
   - Primary developer of the 2.0 "Plus" edition.

@@ -1,10 +1,10 @@
 #!/bin/bash
-# Mac build script for TD Launcher
+# Mac build script for TD Launcher Plus
 # Creates a standalone Mac app bundle for Apple Silicon (arm64)
 
 set -e  # Exit on any error
 
-echo "Building TD Launcher for Mac..."
+echo "Building TD Launcher Plus for Mac..."
 
 # Activate virtual environment if it exists
 if [ -d "td_launcher_env" ]; then
@@ -28,10 +28,10 @@ rm -rf dist/
 
 # Build the app bundle
 echo "Running PyInstaller..."
-pyinstaller --noconfirm --log-level=WARN "TD Launcher.spec"
+pyinstaller --noconfirm --log-level=WARN "TD Launcher Plus.spec"
 
 echo "Build completed!"
-echo "App bundle created at: dist/TD Launcher.app"
+echo "App bundle created at: dist/TD Launcher Plus.app"
 
 # Optional: Create a DMG (requires create-dmg or similar tool)
 if command -v create-dmg &> /dev/null; then
@@ -43,17 +43,17 @@ if command -v create-dmg &> /dev/null; then
     mkdir -p "$DMG_TEMP_DIR"
     
     # Copy only the app bundle to temp directory
-    cp -R "dist/TD Launcher.app" "$DMG_TEMP_DIR/"
+    cp -R "dist/TD Launcher Plus.app" "$DMG_TEMP_DIR/"
     
     # Create the DMG from the clean temp directory
     # Note: create-dmg sometimes adds .VolumeIcon.icns automatically
     create-dmg \
-        --volname "TD Launcher Installer" \
+        --volname "TD Launcher Plus Installer" \
         --window-pos 200 120 \
         --window-size 600 300 \
         --icon-size 100 \
-        --icon "TD Launcher.app" 175 120 \
-        --hide-extension "TD Launcher.app" \
+        --icon "TD Launcher Plus.app" 175 120 \
+        --hide-extension "TD Launcher Plus.app" \
         --app-drop-link 425 120 \
         --no-internet-enable \
         "dist/TD_Launcher_Installer.arm64.dmg" \
@@ -73,12 +73,12 @@ fi
 echo ""
 echo "Build Summary:"
 echo "=============="
-echo "App Bundle: dist/TD Launcher.app"
+echo "App Bundle: dist/TD Launcher Plus.app"
 if [ -f "dist/TD_Launcher_Installer.arm64.dmg" ]; then
     echo "DMG Installer: dist/TD_Launcher_Installer.arm64.dmg"
 fi
 echo ""
 echo "To test the app:"
-echo "  open 'dist/TD Launcher.app'"
+echo "  open 'dist/TD Launcher Plus.app'"
 echo "  or"
-echo "  open 'dist/TD Launcher.app' --args /path/to/test.toe"
+echo "  open 'dist/TD Launcher Plus.app' --args /path/to/test.toe"

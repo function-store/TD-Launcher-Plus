@@ -1,4 +1,4 @@
-"""Configuration management for TD Launcher."""
+"""Configuration management for TD Launcher Plus."""
 
 import json
 import os
@@ -19,7 +19,7 @@ DEFAULT_CONFIG = {
 
 
 class Config:
-    """Manages TD Launcher configuration."""
+    """Manages TD Launcher Plus configuration."""
 
     def __init__(self):
         self._config: Dict[str, Any] = {}
@@ -34,7 +34,7 @@ class Config:
             return os.path.expanduser('~/.config/td-launcher')
         elif system == 'Windows':
             appdata = os.environ.get('APPDATA', os.path.expanduser('~'))
-            return os.path.join(appdata, 'TD Launcher')
+            return os.path.join(appdata, 'TD Launcher Plus')
         else:  # Linux and others
             return os.path.expanduser('~/.config/td-launcher')
 
@@ -188,7 +188,7 @@ def show_remove_confirmation(filename: str) -> tuple:
     """
     if platform.system() == 'Darwin':
         script = f'''
-        set dialogResult to display dialog "Remove \\"{filename}\\" from this list?\\n\\nThis only removes it from TD Launcher's list, not from your file system." buttons {{"Cancel", "Remove", "Remove & Don't Ask Again"}} default button "Remove" with title "Remove from List"
+        set dialogResult to display dialog "Remove \\"{filename}\\" from this list?\\n\\nThis only removes it from TD Launcher Plus's list, not from your file system." buttons {{"Cancel", "Remove", "Remove & Don't Ask Again"}} default button "Remove" with title "Remove from List"
         return button returned of dialogResult
         '''
         try:

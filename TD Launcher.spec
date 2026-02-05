@@ -23,7 +23,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name='TD Launcher',
+    name='TD Launcher Plus',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -43,11 +43,11 @@ coll = COLLECT(
     strip=False,
     upx=True,
     upx_exclude=[],
-    name='TD Launcher',
+    name='TD Launcher Plus',
 )
 app = BUNDLE(
     coll,
-    name='TD Launcher.app',
+    name='TD Launcher Plus.app',
     icon='td_launcher.icns',
     bundle_identifier='com.enviral-design.td-launcher',
     info_plist={
@@ -72,8 +72,8 @@ app = BUNDLE(
                 }
             }
         ],
-        'CFBundleDisplayName': 'TD Launcher',
-        'CFBundleGetInfoString': 'TD Launcher - TouchDesigner Project Launcher',
+        'CFBundleDisplayName': 'TD Launcher Plus',
+        'CFBundleGetInfoString': 'TD Launcher Plus - TouchDesigner Project Launcher',
         'CFBundleShortVersionString': '2.0.0',
         'CFBundleVersion': '2.0.0',
         'NSHighResolutionCapable': True,

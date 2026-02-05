@@ -1,4 +1,4 @@
-"""Utility functions for TD Launcher."""
+"""Utility functions for TD Launcher Plus."""
 
 import os
 import platform
@@ -48,8 +48,7 @@ def show_native_file_picker(prompt: str = "Select TouchDesigner File") -> Option
             result = subprocess.run(
                 ['osascript', '-e', script],
                 capture_output=True,
-                text=True,
-                timeout=60
+                text=True
             )
             if result.returncode == 0:
                 path = result.stdout.strip()
@@ -78,6 +77,59 @@ def show_native_file_picker(prompt: str = "Select TouchDesigner File") -> Option
         return None
 
     return None
+
+
+def show_native_file_picker_multiple(prompt: str = "Select TouchDesigner Files") -> list:
+    """Show native file picker dialog allowing multiple selection.
+
+    Returns a list of selected file paths, or empty list if cancelled.
+    """
+    if platform.system() == 'Darwin':
+        # macOS - use AppleScript with multiple selections
+        script = f'''
+        set theFiles to choose file with prompt "{prompt}" of type {{"toe"}} with multiple selections allowed
+        set posixPaths to ""
+        repeat with aFile in theFiles
+            set posixPaths to posixPaths & POSIX path of aFile & linefeed
+        end repeat
+        return posixPaths
+        '''
+        try:
+            result = subprocess.run(
+                ['osascript', '-e', script],
+                capture_output=True,
+                text=True
+            )
+            if result.returncode == 0:
+                paths = []
+                for line in result.stdout.strip().split('\n'):
+                    path = line.strip()
+                    if path and os.path.exists(path):
+                        paths.append(path)
+                return paths
+        except Exception as e:
+            logger.error(f"File picker error: {e}")
+        return []
+
+    elif platform.system() == 'Windows':
+        # Windows - use tkinter with multiple selection
+        try:
+            import tkinter as tk
+            from tkinter import filedialog
+            root = tk.Tk()
+            root.withdraw()
+            file_paths = filedialog.askopenfilenames(
+                title=prompt,
+                filetypes=[("TouchDesigner files", "*.toe"), ("All files", "*.*")]
+            )
+            root.destroy()
+            if file_paths:
+                return list(file_paths)
+        except Exception as e:
+            logger.error(f"File picker error: {e}")
+        return []
+
+    return []
 
 
 def find_project_icon(project_path: str) -> Optional[str]:

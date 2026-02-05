@@ -1,10 +1,10 @@
 #!/bin/bash
-# Mac setup script for TD Launcher development
+# Mac setup script for TD Launcher Plus development
 # Installs Python dependencies and prepares build environment
 
 set -e
 
-echo "Setting up TD Launcher development environment for Mac..."
+echo "Setting up TD Launcher Plus development environment for Mac..."
 echo "=" * 60
 
 # Check Python version

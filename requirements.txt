@@ -1,4 +1,4 @@
-# TD Launcher Python Dependencies
+# TD Launcher Plus Python Dependencies
 # Core GUI framework
 dearpygui>=1.9.0
 
