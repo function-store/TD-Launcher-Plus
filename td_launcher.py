@@ -240,7 +240,7 @@ class LauncherApp:
 
         self.seconds_started = time.time()
 
-        # Show first-run setup prompt (macOS only, dashboard mode only)
+        # Show first-run setup prompt (dashboard mode only, once per install)
         if self.picker_mode and not self.config.has_prompted_file_assoc:
             self._show_first_run_modal()
 
@@ -2547,7 +2547,7 @@ class LauncherApp:
         viewport_width = dpg.get_viewport_width()
         viewport_height = dpg.get_viewport_height()
         modal_width = 460
-        modal_height = 200
+        modal_height = 200 if platform.system() == 'Darwin' else 250
 
         def _dismiss():
             self.config.has_prompted_file_assoc = True
@@ -2594,6 +2594,12 @@ class LauncherApp:
                     "Set TD Launcher Plus as the default app\n"
                     "for opening .toe files?",
                 )
+                dpg.add_spacer(height=4)
+                dpg.add_text(
+                    "  This will open Windows Settings where you\n"
+                    "  can search for .toe and select TD Launcher Plus.",
+                    color=[180, 180, 180, 255]
+                )
                 dpg.add_spacer(height=12)
                 with dpg.table(header_row=False, width=-1):
                     dpg.add_table_column(width_stretch=True)
@@ -2603,7 +2609,7 @@ class LauncherApp:
                     with dpg.table_row():
                         dpg.add_text("")
                         dpg.add_button(
-                            label="Set as Default",
+                            label="Open Settings",
                             callback=lambda: _set_windows_assoc_and_dismiss(),
                             width=120
                         )
@@ -2611,7 +2617,13 @@ class LauncherApp:
                         dpg.add_text("")
 
     def _set_windows_file_association(self):
-        """Set .toe file association to this app via Windows registry (HKCU)."""
+        """Register .toe file association and open Settings for user confirmation.
+
+        Windows 10/11 use a hash-protected UserChoice key that prevents
+        programmatic default-app changes. We register the ProgID so the app
+        appears in "Open With", then open the Settings page for the user to
+        confirm.
+        """
         try:
             import winreg
             exe_path = os.path.abspath(sys.executable)
@@ -2629,9 +2641,7 @@ class LauncherApp:
                 with winreg.CreateKey(winreg.HKEY_CURRENT_USER, rf"Software\Classes\{prog_id}\DefaultIcon") as key:
                     winreg.SetValueEx(key, "", 0, winreg.REG_SZ, ico_path)
 
-            # Associate .toe with our ProgID
-            with winreg.CreateKey(winreg.HKEY_CURRENT_USER, r"Software\Classes\.toe") as key:
-                winreg.SetValueEx(key, "", 0, winreg.REG_SZ, prog_id)
+            # Register in OpenWithProgids so it appears in "Open With" for .toe
             with winreg.CreateKey(winreg.HKEY_CURRENT_USER, r"Software\Classes\.toe\OpenWithProgids") as key:
                 winreg.SetValueEx(key, prog_id, 0, winreg.REG_NONE, b"")
 
@@ -2641,7 +2651,11 @@ class LauncherApp:
             SHCNF_IDLIST = 0x0000
             ctypes.windll.shell32.SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, None, None)
 
-            logger.info("File association set successfully for .toe files")
+            logger.info("File association registered for .toe files, opening Settings...")
+
+            # Open Windows Settings default apps page for user to confirm
+            os.startfile("ms-settings:defaultapps")
+
         except Exception as e:
             logger.error(f"Failed to set file association: {e}")
 
