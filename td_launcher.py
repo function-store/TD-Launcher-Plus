@@ -439,20 +439,25 @@ class LauncherApp:
 
             # Selected Themes (Prevent Gray Hover)
             # ------------------------------------
-            # When selected, use default Header blue for active and hover
-            header_blue = [66, 150, 250, 103] # Default approximate blue
+            # When selected, use default Header blue for active, hover, AND selection background
+            header_blue = [66, 150, 250, 103]  # Default approximate blue
+            header_active = [66, 150, 250, 160]  # Slightly brighter for active state
             
             if not dpg.does_item_exist("selected_launcher_theme"):
                 with dpg.theme(tag="selected_launcher_theme"):
                     with dpg.theme_component(dpg.mvAll):
                         dpg.add_theme_color(dpg.mvThemeCol_Text, [200, 255, 200, 255], category=dpg.mvThemeCat_Core)
+                        dpg.add_theme_color(dpg.mvThemeCol_Header, header_blue, category=dpg.mvThemeCat_Core)
                         dpg.add_theme_color(dpg.mvThemeCol_HeaderHovered, header_blue, category=dpg.mvThemeCat_Core)
+                        dpg.add_theme_color(dpg.mvThemeCol_HeaderActive, header_active, category=dpg.mvThemeCat_Core)
 
             if not dpg.does_item_exist("selected_td_theme"):
                 with dpg.theme(tag="selected_td_theme"):
                     with dpg.theme_component(dpg.mvAll):
                         dpg.add_theme_color(dpg.mvThemeCol_Text, [255, 255, 200, 255], category=dpg.mvThemeCat_Core)
+                        dpg.add_theme_color(dpg.mvThemeCol_Header, header_blue, category=dpg.mvThemeCat_Core)
                         dpg.add_theme_color(dpg.mvThemeCol_HeaderHovered, header_blue, category=dpg.mvThemeCat_Core)
+                        dpg.add_theme_color(dpg.mvThemeCol_HeaderActive, header_active, category=dpg.mvThemeCat_Core)
 
             if not dpg.does_item_exist("selected_default_theme"):
                 with dpg.theme(tag="selected_default_theme"):
@@ -460,7 +465,9 @@ class LauncherApp:
                         # Text color handled by default/parent or override if needed?
                         # Default white
                         dpg.add_theme_color(dpg.mvThemeCol_Text, [255, 255, 255, 255], category=dpg.mvThemeCat_Core) 
+                        dpg.add_theme_color(dpg.mvThemeCol_Header, header_blue, category=dpg.mvThemeCat_Core)
                         dpg.add_theme_color(dpg.mvThemeCol_HeaderHovered, header_blue, category=dpg.mvThemeCat_Core)
+                        dpg.add_theme_color(dpg.mvThemeCol_HeaderActive, header_active, category=dpg.mvThemeCat_Core)
 
 
             with dpg.group(tag="main_ui_group"):
