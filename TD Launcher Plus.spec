@@ -10,7 +10,8 @@ a = Analysis(
     datas=[
         ('test.toe', '.'),
         ('td_launcher_plus.icns', '.'),
-        ('td_launcher_plus.ico', '.')
+        ('td_launcher_plus.ico', '.'),
+        ('touchdesigner.png', '.')
     ],
     hiddenimports=[],
     hookspath=[],
