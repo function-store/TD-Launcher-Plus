@@ -32,7 +32,7 @@ from utils import (
 )
 
 # Version
-APP_VERSION = "2.0.1"
+APP_VERSION = "2.0.2"
 
 # Sentinel for the "Default" template entry (launch TD without a file)
 DEFAULT_TEMPLATE = "__default__"
@@ -2547,11 +2547,7 @@ class LauncherApp:
         viewport_width = dpg.get_viewport_width()
         viewport_height = dpg.get_viewport_height()
         modal_width = 480
-        is_mac = platform.system() == 'Darwin'
-        is_win = platform.system() == 'Windows'
-        # Check if installer already set .toe association (Windows only)
-        installer_handled = is_win and self._is_installer_assoc_set()
-        modal_height = 300 if installer_handled else 320
+        modal_height = 340
 
         def _dismiss():
             self.config.has_prompted_file_assoc = True
@@ -2572,26 +2568,25 @@ class LauncherApp:
             dpg.add_text(f"TD Launcher Plus v{APP_VERSION}", color=[50, 255, 0, 255])
             dpg.add_spacer(height=5)
 
-            # --- File association instructions (skip if installer handled it) ---
-            if not installer_handled:
-                dpg.add_text("Set as default for .toe files", color=[255, 200, 50, 255])
-                dpg.add_spacer(height=4)
-                if is_mac:
-                    dpg.add_text(
-                        "  Right-click any .toe file > Get Info > Open with\n"
-                        "  > select TD Launcher Plus > Change All...",
-                        color=[180, 180, 180, 255]
-                    )
-                else:
-                    # Register ProgID silently so app appears in "Open With"
-                    self._set_windows_file_association()
-                    dpg.add_text(
-                        "  Right-click any .toe file > Open with\n"
-                        "  > Choose another app > select TD Launcher Plus\n"
-                        "  > check \"Always use this app\"",
-                        color=[180, 180, 180, 255]
-                    )
-                dpg.add_spacer(height=10)
+            # --- File association instructions ---
+            dpg.add_text("Set as default for .toe files", color=[255, 200, 50, 255])
+            dpg.add_spacer(height=4)
+            if platform.system() == 'Darwin':
+                dpg.add_text(
+                    "  Right-click any .toe file > Get Info > Open with\n"
+                    "  > select TD Launcher Plus > Change All...",
+                    color=[180, 180, 180, 255]
+                )
+            else:
+                # Register ProgID silently so app appears in "Open With"
+                self._set_windows_file_association()
+                dpg.add_text(
+                    "  Right-click any .toe file > Open with\n"
+                    "  > Choose another app > select TD Launcher Plus\n"
+                    "  > check \"Always use this app\"",
+                    color=[180, 180, 180, 255]
+                )
+            dpg.add_spacer(height=10)
 
             # --- Utility TOX info (always shown) ---
             dpg.add_text("Companion utility for TouchDesigner", color=[255, 200, 50, 255])
@@ -2629,24 +2624,6 @@ class LauncherApp:
                     dpg.add_text("")
                     dpg.add_button(label="Got it", callback=lambda: _dismiss(), width=80)
                     dpg.add_text("")
-
-    def _is_installer_assoc_set(self):
-        """Check if the Inno Setup installer already configured .toe association."""
-        try:
-            import winreg
-            # The installer registers ProgID "TDLauncherPlusFile.toe" under HKA (HKLM or HKCU)
-            # and sets .toe default to that ProgID. Check both locations.
-            for hive in (winreg.HKEY_LOCAL_MACHINE, winreg.HKEY_CURRENT_USER):
-                try:
-                    with winreg.OpenKey(hive, r"Software\Classes\.toe") as key:
-                        value, _ = winreg.QueryValueEx(key, "")
-                        if value == "TDLauncherPlusFile.toe":
-                            return True
-                except FileNotFoundError:
-                    continue
-        except Exception:
-            pass
-        return False
 
     def _set_windows_file_association(self):
         """Register .toe ProgID so the app appears in the 'Open With' list.
