@@ -1870,6 +1870,37 @@ class LauncherApp:
                 logger.warning("Quick Launch failed: No templates found.")
             return
 
+        # 6. Ctrl+1-9 / Cmd+1-9 - Launch template by position with newest TD version
+        number_keys = {
+            getattr(dpg, 'mvKey_1', 49): 0,
+            getattr(dpg, 'mvKey_2', 50): 1,
+            getattr(dpg, 'mvKey_3', 51): 2,
+            getattr(dpg, 'mvKey_4', 52): 3,
+            getattr(dpg, 'mvKey_5', 53): 4,
+            getattr(dpg, 'mvKey_6', 54): 5,
+            getattr(dpg, 'mvKey_7', 55): 6,
+            getattr(dpg, 'mvKey_8', 56): 7,
+            getattr(dpg, 'mvKey_9', 57): 8,
+        }
+        if modifier_held and key_code in number_keys:
+            template_index = number_keys[key_code]
+            templates = self.config.get_templates()
+            if template_index < len(templates):
+                template = templates[template_index]
+                file_path = template if isinstance(template, str) else template.get('path', '')
+                
+                # Get newest version
+                version_keys = self.td_manager.get_sorted_version_keys()
+                if version_keys:
+                    newest_version = version_keys[-1]
+                    logger.debug(f"Shortcut: Launching template #{template_index + 1} ({file_path}) with {newest_version}")
+                    self._launch_project(file_path, newest_version, promote=False)
+                else:
+                    logger.warning(f"Quick Launch #{template_index + 1} failed: No TouchDesigner versions discovered.")
+            else:
+                logger.debug(f"Template #{template_index + 1} does not exist (only {len(templates)} templates)")
+            return
+
         # Space - toggle focus between picker and versions
         # Standard ascii space is 32. DPG on Windows sometimes uses 524.
         if (key_code == 32 or key_code == 524 or key_code == getattr(dpg, 'mvKey_Space', -1)) and not modifier_held:

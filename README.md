@@ -95,6 +95,7 @@ Without this utility, only files launched through TD Launcher Plus appear in the
 - **Cmd + Down** (Mac) / **Ctrl + Down** (Win): Move selected template down (Templates tab only)
 - **Cmd + S** (Mac) / **Ctrl + S** (Win): **Save** README changes (while in Edit Mode)
 - **Cmd + D** (Mac) / **Ctrl + D** (Win): **Quick Launch** top template with newest TD version
+- **Cmd + 1-9** (Mac) / **Ctrl + 1-9** (Win): **Launch template by position** (1st, 2nd, 3rd, etc.) with newest TD version
 
 ---
 
