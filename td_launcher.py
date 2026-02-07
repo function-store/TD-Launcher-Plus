@@ -424,7 +424,9 @@ class LauncherApp:
                         dpg.add_theme_color(dpg.mvThemeCol_Text, [50, 255, 50, 255], category=dpg.mvThemeCat_Core)
                         # Override hover to match ACTIVE header color (default blue-ish or custom?)
                         # Actually 'Header' default is roughly [66, 150, 250, 103]
+                        dpg.add_theme_color(dpg.mvThemeCol_Header, [66, 150, 250, 103], category=dpg.mvThemeCat_Core)
                         dpg.add_theme_color(dpg.mvThemeCol_HeaderHovered, [66, 150, 250, 103], category=dpg.mvThemeCat_Core)
+                        dpg.add_theme_color(dpg.mvThemeCol_HeaderActive, [66, 150, 250, 160], category=dpg.mvThemeCat_Core)
 
             # Create global theme for TD-synced recent items (Yellow)
             if not dpg.does_item_exist("td_item_theme"):
@@ -822,7 +824,11 @@ class LauncherApp:
                         if is_currently_selected:
                             self.active_highlight_tags.add(f"recent_file_{i}")
                             # Bind selected theme (Blue hover)
-                            if user_source_type == 'active':
+                            # Check for Global Version Focus first - Use Green Theme
+                            if hasattr(self, 'selection_focus') and self.selection_focus == 'versions':
+                                dpg.bind_item_theme(f"recent_file_{i}", "selected_focused_theme")
+                            # Then Active Item Theme
+                            elif user_source_type == 'active':
                                  # Keep Active Green text but override hover
                                  dpg.bind_item_theme(f"recent_file_{i}", "active_item_theme") # Active theme already has custom hover to match
                             elif user_source_type == 'launcher':
