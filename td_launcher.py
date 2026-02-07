@@ -34,6 +34,9 @@ from utils import (
 # Version
 APP_VERSION = "2.0.1"
 
+# Sentinel for the "Default" template entry (launch TD without a file)
+DEFAULT_TEMPLATE = "__default__"
+
 # Setup logging
 DEBUG_MODE = os.environ.get('DEBUG', '').lower() in ('1', 'true', 'yes')
 logging.basicConfig(
@@ -236,6 +239,10 @@ class LauncherApp:
         dpg.set_primary_window("Primary Window", True)
 
         self.seconds_started = time.time()
+
+        # Show first-run setup prompt (macOS only, dashboard mode only)
+        if self.picker_mode and not self.config.has_prompted_file_assoc:
+            self._show_first_run_modal()
 
         # Set countdown state
         if self.picker_mode:
@@ -903,22 +910,40 @@ class LauncherApp:
         templates = self.config.get_templates()
         show_icons = self.config.show_icons
 
-        if not templates:
-            dpg.add_text(
-                "No templates added yet.\nClick 'Add Templates...' or drag a .toe file onto the app icon.",
-                parent="templates_list",
-                color=[150, 150, 150, 255]
-            )
-            return
-
         # 1. First pass: Calculate max name width
-        max_chars = 22 # Minimum base
+        max_chars = 22 # Minimum base ("Default (new project)")
         for t in templates:
             name = os.path.basename(t) if isinstance(t, str) else t.get('name', os.path.basename(t.get('path', '')))
             max_chars = max(max_chars, len(name))
-        
+
         # Consistent multiplier
         calculated_width = max(200, (max_chars * 9) + 20)
+
+        # Always add "Default" entry at the top (launches TD without a file)
+        display_index = 0
+        self.visible_templates.append(DEFAULT_TEMPLATE)
+        with dpg.group(horizontal=True, parent="templates_list", tag=f"template_row_{display_index}"):
+            if show_icons:
+                texture_tag = load_default_icon()
+                if texture_tag:
+                    dpg.add_image(texture_tag, width=50, height=50, tag=f"template_icon_{display_index}")
+                    dpg.bind_item_handler_registry(f"template_icon_{display_index}", "row_click_handler")
+            with dpg.group():
+                if show_icons:
+                    dpg.add_spacer(height=15)
+                with dpg.group(horizontal=True):
+                    dpg.add_selectable(
+                        label="Default (new project)",
+                        tag=f"template_{display_index}",
+                        callback=self._on_file_selected,
+                        user_data={'path': DEFAULT_TEMPLATE, 'type': 'template'},
+                        width=calculated_width
+                    )
+                    with dpg.tooltip(dpg.last_item()):
+                        dpg.add_text("Launch TouchDesigner with its default startup file", wrap=400)
+                    dpg.add_text("  Opens TD with default startup", color=[150, 150, 150, 255], tag=f"template_path_{display_index}")
+                    dpg.bind_item_handler_registry(f"template_path_{display_index}", "row_click_handler")
+        display_index += 1
 
         for i, t in enumerate(templates):
             # Handle both string paths and dict entries
@@ -927,8 +952,9 @@ class LauncherApp:
             name = os.path.basename(file_path) if isinstance(t, str) else t.get('name', os.path.basename(file_path))
             exists = os.path.exists(file_path)
             modified = format_file_modified_time(file_path) if exists else ""
+            di = display_index + i
 
-            with dpg.group(horizontal=True, parent="templates_list", tag=f"template_row_{i}"):
+            with dpg.group(horizontal=True, parent="templates_list", tag=f"template_row_{di}"):
                 # Icon
                 if show_icons:
                     icon_path = find_project_icon(file_path) if exists else None
@@ -938,8 +964,8 @@ class LauncherApp:
                     if not texture_tag:
                         texture_tag = load_default_icon()
                     if texture_tag:
-                        dpg.add_image(texture_tag, width=50, height=50, tag=f"template_icon_{i}")
-                        dpg.bind_item_handler_registry(f"template_icon_{i}", "row_click_handler")
+                        dpg.add_image(texture_tag, width=50, height=50, tag=f"template_icon_{di}")
+                        dpg.bind_item_handler_registry(f"template_icon_{di}", "row_click_handler")
 
                 # Content group for vertical centering
                 with dpg.group():
@@ -949,7 +975,7 @@ class LauncherApp:
                         # Name (selectable)
                         dpg.add_selectable(
                             label=name,
-                            tag=f"template_{i}",
+                            tag=f"template_{di}",
                             callback=self._on_file_selected,
                             user_data={'path': file_path, 'type': 'template'},
                             width=calculated_width
@@ -961,7 +987,7 @@ class LauncherApp:
                         # Up Button
                         dpg.add_button(
                             label="^",
-                            tag=f"template_up_{i}",
+                            tag=f"template_up_{di}",
                             callback=self._on_move_template_up,
                             user_data=file_path,
                             small=True
@@ -970,7 +996,7 @@ class LauncherApp:
                         # Down Button
                         dpg.add_button(
                             label="v",
-                            tag=f"template_down_{i}",
+                            tag=f"template_down_{di}",
                             callback=self._on_move_template_down,
                             user_data=file_path,
                             small=True
@@ -979,19 +1005,19 @@ class LauncherApp:
                         # Remove button
                         dpg.add_button(
                             label="X",
-                            tag=f"remove_template_{i}",
+                            tag=f"remove_template_{di}",
                             callback=self._on_remove_template,
                             user_data=file_path,
                             small=True
                         )
 
                         # Modified date
-                        dpg.add_text(f"  {modified}", color=[100, 150, 100, 255], tag=f"template_mod_{i}")
-                        dpg.bind_item_handler_registry(f"template_mod_{i}", "row_click_handler")
+                        dpg.add_text(f"  {modified}", color=[100, 150, 100, 255], tag=f"template_mod_{di}")
+                        dpg.bind_item_handler_registry(f"template_mod_{di}", "row_click_handler")
 
                         # Path
-                        dpg.add_text(f"  {file_path}", color=[150, 150, 150, 255], tag=f"template_path_{i}")
-                        dpg.bind_item_handler_registry(f"template_path_{i}", "row_click_handler")
+                        dpg.add_text(f"  {file_path}", color=[150, 150, 150, 255], tag=f"template_path_{di}")
+                        dpg.bind_item_handler_registry(f"template_path_{di}", "row_click_handler")
                         with dpg.tooltip(dpg.last_item()):
                             dpg.add_text(file_path, wrap=400)
 
@@ -1173,6 +1199,34 @@ class LauncherApp:
         if dpg.does_item_exist("version_panel"):
             dpg.delete_item("version_panel", children_only=True)
 
+        # Handle "Default" template (launch TD without a file)
+        if self.selected_file == DEFAULT_TEMPLATE:
+            dpg.add_text(
+                "Launch TouchDesigner with default startup",
+                parent="version_panel",
+                color=[150, 200, 255, 255]
+            )
+            dpg.add_separator(parent="version_panel")
+            version_keys = self.td_manager.get_sorted_version_keys()
+            if version_keys:
+                with dpg.child_window(height=240, width=-1, parent="version_panel", tag="td_version_container"):
+                    dpg.add_radio_button(
+                        version_keys,
+                        default_value=version_keys[-1],
+                        tag="td_version",
+                        horizontal=False,
+                        callback=self._on_version_selected
+                    )
+                if dpg.does_item_exist("launch_button"):
+                    dpg.configure_item("launch_button", enabled=True)
+                    dpg.configure_item("launch_button", label="Launch TouchDesigner")
+            else:
+                dpg.add_text("No TouchDesigner versions found!", parent="version_panel", color=[255, 50, 0, 255])
+                if dpg.does_item_exist("launch_button"):
+                    dpg.configure_item("launch_button", enabled=False)
+            self.countdown_enabled = False
+            return
+
         if not self.selected_file or not os.path.exists(self.selected_file):
             dpg.add_text(
                 "Select a file above to see version info",
@@ -1271,15 +1325,18 @@ class LauncherApp:
         
         default_version = None
         if version_keys:
-            if self.build_info in version_keys:
+            # Templates always default to the latest version
+            if self._get_current_tab() == 'templates':
+                default_version = version_keys[-1]
+            elif self.build_info in version_keys:
                 default_version = self.build_info
             else:
                 # Match missing - find closest older version
                 target_v = self.td_manager.parse_version_string(self.build_info)
                 # version_keys is sorted ascending (earliest to latest)
                 # Fallback to oldest installed if all are newer
-                default_version = version_keys[0] 
-                
+                default_version = version_keys[0]
+
                 for v_key in version_keys:
                     current_v = self.td_manager.parse_version_string(v_key)
                     if current_v <= target_v:
@@ -1888,23 +1945,15 @@ class LauncherApp:
             self._on_toggle_icons(None, new_state)
             return
 
-        # 5. Ctrl+D / Cmd+D - Quick Launch Top Template (D for Default)
+        # 5. Ctrl+D / Cmd+D - Launch TD with default startup (no file)
         if modifier_held and key_code == getattr(dpg, 'mvKey_D', -1):
-            templates = self.config.get_templates()
-            if templates:
-                top_template = templates[0]
-                file_path = top_template if isinstance(top_template, str) else top_template.get('path', '')
-                
-                # Get newest version
-                version_keys = self.td_manager.get_sorted_version_keys()
-                if version_keys:
-                    newest_version = version_keys[-1]
-                    logger.debug(f"Shortcut: Quick-launching top template {file_path} with {newest_version}")
-                    self._launch_project(file_path, newest_version, promote=False)
-                else:
-                    logger.warning("Quick Launch failed: No TouchDesigner versions discovered.")
-            else:
-                logger.warning("Quick Launch failed: No templates found.")
+            version_keys = self.td_manager.get_sorted_version_keys()
+            if not version_keys:
+                logger.warning("Quick Launch failed: No TouchDesigner versions discovered.")
+                return
+            newest_version = version_keys[-1]
+            logger.debug(f"Shortcut: Launching latest TD ({newest_version}) with default startup")
+            self._launch_project(DEFAULT_TEMPLATE, newest_version, promote=False)
             return
 
         # 6. Ctrl+1-9 / Cmd+1-9 - Launch template by position with newest TD version
@@ -2110,7 +2159,7 @@ class LauncherApp:
             self.last_click_time = current_time
             self.last_clicked_path = file_path
 
-            if os.path.exists(file_path):
+            if file_path == DEFAULT_TEMPLATE or os.path.exists(file_path):
                 self.selected_file = file_path
                 self._update_version_panel()
                 self.countdown_enabled = False
@@ -2123,7 +2172,7 @@ class LauncherApp:
 
         if 0.05 <= time_since_last < 0.5:
             # Double-click - launch with current version selection IF it's installed
-            if os.path.exists(file_path):
+            if file_path == DEFAULT_TEMPLATE or os.path.exists(file_path):
                 version = dpg.get_value("td_version") if dpg.does_item_exist("td_version") else self.build_info
                 if version and self.td_manager.is_version_installed(version):
                     self.countdown_enabled = False
@@ -2277,7 +2326,9 @@ class LauncherApp:
 
     def _launch_project(self, file_path, version, promote=True):
         """Core logic to launch a TD project with a specific version."""
-        if promote:
+        is_default = (file_path == DEFAULT_TEMPLATE)
+
+        if promote and not is_default:
             self.config.add_recent_file(file_path)
             self.active_manual_file = file_path  # Set as session active
             self._build_recent_files_list()
@@ -2287,18 +2338,23 @@ class LauncherApp:
             logger.error(f"Could not find executable for version {version}")
             return
 
-        logger.info(f"Launching {file_path} with {version}")
+        logger.info(f"Launching {'TouchDesigner (default)' if is_default else file_path} with {version}")
 
         try:
             if platform.system() == 'Darwin':
                 app_path = self.td_manager.get_app_path(version)
-                if app_path:
+                if is_default:
+                    subprocess.Popen(['open', '-a', app_path] if app_path else [executable])
+                elif app_path:
                     subprocess.Popen(['open', '-a', app_path, file_path])
                 else:
                     subprocess.Popen([executable, file_path])
             else:
-                subprocess.Popen([executable, file_path])
-            
+                if is_default:
+                    subprocess.Popen([executable])
+                else:
+                    subprocess.Popen([executable, file_path])
+
             # Close launcher after successful launch command
             dpg.stop_dearpygui()
         except Exception as e:
@@ -2481,6 +2537,113 @@ class LauncherApp:
             logger.error(f"Failed to delete installer: {e}")
         if dpg.does_item_exist(modal_tag):
             dpg.delete_item(modal_tag)
+
+    def _show_first_run_modal(self):
+        """Show a one-time setup prompt for new users."""
+        modal_tag = "first_run_modal"
+        if dpg.does_item_exist(modal_tag):
+            dpg.delete_item(modal_tag)
+
+        viewport_width = dpg.get_viewport_width()
+        viewport_height = dpg.get_viewport_height()
+        modal_width = 460
+        modal_height = 200
+
+        def _dismiss():
+            self.config.has_prompted_file_assoc = True
+            if dpg.does_item_exist(modal_tag):
+                dpg.delete_item(modal_tag)
+
+        def _set_windows_assoc_and_dismiss():
+            self._set_windows_file_association()
+            _dismiss()
+
+        with dpg.window(
+            label="Welcome to TD Launcher Plus by Function Store",
+            tag=modal_tag,
+            modal=True,
+            show=True,
+            no_resize=True,
+            no_move=True,
+            width=modal_width,
+            height=modal_height,
+            pos=[(viewport_width - modal_width) // 2, (viewport_height - modal_height) // 2]
+        ):
+            dpg.add_text(f"TD Launcher Plus v{APP_VERSION}", color=[50, 255, 0, 255])
+            dpg.add_spacer(height=5)
+
+            if platform.system() == 'Darwin':
+                dpg.add_text("Set as default for .toe files", color=[255, 200, 50, 255])
+                dpg.add_spacer(height=4)
+                dpg.add_text(
+                    "  Right-click any .toe file > Get Info > Open with\n"
+                    "  > select TD Launcher Plus > Change All...",
+                    color=[180, 180, 180, 255]
+                )
+                dpg.add_spacer(height=12)
+                with dpg.table(header_row=False, width=-1):
+                    dpg.add_table_column(width_stretch=True)
+                    dpg.add_table_column(width_fixed=True)
+                    dpg.add_table_column(width_stretch=True)
+                    with dpg.table_row():
+                        dpg.add_text("")
+                        dpg.add_button(label="Got it", callback=lambda: _dismiss(), width=80)
+                        dpg.add_text("")
+            else:
+                dpg.add_text(
+                    "Set TD Launcher Plus as the default app\n"
+                    "for opening .toe files?",
+                )
+                dpg.add_spacer(height=12)
+                with dpg.table(header_row=False, width=-1):
+                    dpg.add_table_column(width_stretch=True)
+                    dpg.add_table_column(width_fixed=True)
+                    dpg.add_table_column(width_fixed=True)
+                    dpg.add_table_column(width_stretch=True)
+                    with dpg.table_row():
+                        dpg.add_text("")
+                        dpg.add_button(
+                            label="Set as Default",
+                            callback=lambda: _set_windows_assoc_and_dismiss(),
+                            width=120
+                        )
+                        dpg.add_button(label="Skip", callback=lambda: _dismiss(), width=80)
+                        dpg.add_text("")
+
+    def _set_windows_file_association(self):
+        """Set .toe file association to this app via Windows registry (HKCU)."""
+        try:
+            import winreg
+            exe_path = os.path.abspath(sys.executable)
+            prog_id = "TDLauncherPlus.toe"
+
+            # Register the ProgID with open command
+            with winreg.CreateKey(winreg.HKEY_CURRENT_USER, rf"Software\Classes\{prog_id}") as key:
+                winreg.SetValueEx(key, "", 0, winreg.REG_SZ, "TouchDesigner Environment File")
+            with winreg.CreateKey(winreg.HKEY_CURRENT_USER, rf"Software\Classes\{prog_id}\shell\open\command") as key:
+                winreg.SetValueEx(key, "", 0, winreg.REG_SZ, f'"{exe_path}" "%1"')
+
+            # Set icon
+            ico_path = os.path.join(os.path.dirname(exe_path), "td_launcher_plus.ico")
+            if os.path.exists(ico_path):
+                with winreg.CreateKey(winreg.HKEY_CURRENT_USER, rf"Software\Classes\{prog_id}\DefaultIcon") as key:
+                    winreg.SetValueEx(key, "", 0, winreg.REG_SZ, ico_path)
+
+            # Associate .toe with our ProgID
+            with winreg.CreateKey(winreg.HKEY_CURRENT_USER, r"Software\Classes\.toe") as key:
+                winreg.SetValueEx(key, "", 0, winreg.REG_SZ, prog_id)
+            with winreg.CreateKey(winreg.HKEY_CURRENT_USER, r"Software\Classes\.toe\OpenWithProgids") as key:
+                winreg.SetValueEx(key, prog_id, 0, winreg.REG_NONE, b"")
+
+            # Notify the shell of the change
+            import ctypes
+            SHCNE_ASSOCCHANGED = 0x08000000
+            SHCNF_IDLIST = 0x0000
+            ctypes.windll.shell32.SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, None, None)
+
+            logger.info("File association set successfully for .toe files")
+        except Exception as e:
+            logger.error(f"Failed to set file association: {e}")
 
     def _show_about_modal(self, sender, app_data):
         """Show the About / Info modal."""
@@ -2707,10 +2870,10 @@ class LauncherApp:
         # Update selected file
         item = items[self.tab_selection_indices[current_tab]]
         file_path = item if isinstance(item, str) else item.get('path', '')
-        if os.path.exists(file_path):
+        if file_path == DEFAULT_TEMPLATE or os.path.exists(file_path):
             self.selected_file = file_path
             self.last_clicked_path = file_path
-            
+
             if instant:
                 self.deferred_analysis_time = 0
                 self._update_version_panel()

@@ -16,6 +16,7 @@ DEFAULT_CONFIG = {
     'show_icons': False,
     'show_readme': False,
     'show_full_history': True,
+    'has_prompted_file_assoc': False,
 }
 
 
@@ -336,6 +337,15 @@ class Config:
     @confirm_remove.setter
     def confirm_remove(self, value: bool) -> None:
         self._config['confirm_remove_from_list'] = value
+        self.save()
+
+    @property
+    def has_prompted_file_assoc(self) -> bool:
+        return self._config.get('has_prompted_file_assoc', False)
+
+    @has_prompted_file_assoc.setter
+    def has_prompted_file_assoc(self, value: bool) -> None:
+        self._config['has_prompted_file_assoc'] = value
         self.save()
 
 
