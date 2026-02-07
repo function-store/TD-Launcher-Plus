@@ -84,10 +84,10 @@ Without this utility, only files launched through TD Launcher Plus appear in the
 - **Esc**: Quit application
 
 **Interface Toggles**
-- **H**: Toggle **"Full History"** mode
+- **H**: Toggle **"Full History"** mode (merges with TD's native recent files, duplicates removed)
 - **C**: Toggle **"Show Icons"**
 - **E**: Toggle **"Show Info"** (README) panel
-- **Shift + E**: Activate **Edit Mode** for the current README
+- **Cmd + E** (Mac) / **Ctrl + E** (Win): Activate **Edit Mode** and focus text editor for immediate typing
 
 **File Management**
 - **Backspace / Delete**: Remove selected file from the list (with confirmation)
@@ -109,6 +109,8 @@ TD Launcher Plus analyzes each `.toe` file to determine which TouchDesigner vers
 
 ### Recent Files
 TD Launcher Plus keeps track of recently opened projects. When you launch a `.toe` file, it's automatically added to the Recent Files list for quick access later.
+
+**Full History Mode:** When enabled (toggle with **H** key), your launcher history is merged with TouchDesigner's native recent files list. Duplicate paths are automatically removed, with launcher-sourced files taking priority. Path comparisons are case-insensitive and ignore slash direction differences.
 
 **Versioned files:** TouchDesigner auto-saves create versioned files like `project.7.toe`, `project.8.toe`, etc. TD Launcher Plus intelligently handles these:
 - Versioned files are displayed as their non-versioned counterpart (e.g., `project.7.toe` shows as `project.toe`)

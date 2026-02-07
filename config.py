@@ -120,20 +120,26 @@ class Config:
 
     def remove_recent_file(self, file_path: str) -> None:
         """Remove a file from recent files list (removes from both lists)."""
-        abs_path = os.path.abspath(file_path)
+        # Normalize for comparison (handles case and slash differences)
+        norm_path = os.path.normcase(os.path.normpath(os.path.abspath(file_path)))
+        
+        def paths_match(entry_path):
+            """Check if entry path matches the target path (normalized)."""
+            entry_norm = os.path.normcase(os.path.normpath(os.path.abspath(entry_path)))
+            return entry_norm == norm_path
         
         # Remove from Launcher list
         launcher_recents = self._config.get('launcher_recents', [])
         self._config['launcher_recents'] = [
             rf for rf in launcher_recents 
-            if self._get_path_from_entry(rf) != abs_path
+            if not paths_match(self._get_path_from_entry(rf))
         ]
         
         # Remove from TD list
         td_recents = self._config.get('td_recents', [])
         self._config['td_recents'] = [
             rf for rf in td_recents 
-            if self._get_path_from_entry(rf) != abs_path
+            if not paths_match(self._get_path_from_entry(rf))
         ]
         
         self.save()
@@ -157,28 +163,34 @@ class Config:
             
         td_recents = self._config.get('td_recents', [])
         
-        # Combine and deduplicate
+        # Combine and deduplicate (normalize case, slashes, and absolute paths)
         seen_paths = set()
         merged_list = []
+        
+        def normalize_path(p):
+            """Normalize path for comparison: absolute, normalized slashes, lowercase on Windows."""
+            return os.path.normcase(os.path.normpath(os.path.abspath(p))) if p else ''
         
         # Add Launcher recents first
         for item in launcher_recents:
             path = self._get_path_from_entry(item)
-            if path and path not in seen_paths:
+            norm_path = normalize_path(path)
+            if path and norm_path not in seen_paths:
                 # Use stored source if available, otherwise default to legacy (td/white)
                 # We do NOT force 'launcher' here anymore, so legacy strings stay white
                 entry = item if isinstance(item, dict) else {'path': path, 'last_opened': 0}
                 merged_list.append(entry)
-                seen_paths.add(path)
+                seen_paths.add(norm_path)
                 
         # Add TD recents
         for item in td_recents:
             path = self._get_path_from_entry(item)
-            if path and path not in seen_paths:
+            norm_path = normalize_path(path)
+            if path and norm_path not in seen_paths:
                 entry = item if isinstance(item, dict) else {'path': path, 'last_opened': 0}
                 entry['source'] = 'td'
                 merged_list.append(entry)
-                seen_paths.add(path)
+                seen_paths.add(norm_path)
         
         # Sort by interaction time (last_opened) or modification time
         def get_sort_time(item):

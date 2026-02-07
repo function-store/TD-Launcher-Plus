@@ -9,6 +9,7 @@ import subprocess
 import logging
 import threading
 import webbrowser
+import ctypes
 from typing import Optional
 from urllib.request import urlretrieve
 
@@ -92,6 +93,10 @@ class LauncherApp:
         self.td_uri: Optional[str] = None
         self.td_filename: Optional[str] = None
 
+        # Install monitoring state
+        self.install_pending_version: Optional[str] = None
+        self.install_check_time: float = 0
+
         # Readme state
         self.current_readme_path: Optional[str] = None
         self.readme_modified: bool = False
@@ -103,6 +108,55 @@ class LauncherApp:
 
         # Version analysis cache (path -> build_info)
         self.version_cache: dict = {}
+
+        # Modifier key tracking (more reliable than is_key_down in packaged builds)
+        self._modifier_held = False
+        self._modifier_keys = set()  # Track which modifier keys are held
+
+    def _is_ctrl_pressed(self) -> bool:
+        """Check if Ctrl (Windows) or Cmd (macOS) is currently pressed using OS-native APIs.
+        
+        This bypasses DearPyGui's keyboard handlers which may not work in packaged builds.
+        Uses Windows GetAsyncKeyState or macOS Quartz/AppKit.
+        """
+        if platform.system() == 'Windows':
+            # VK_CONTROL = 0x11, VK_LCONTROL = 0xA2, VK_RCONTROL = 0xA3
+            try:
+                user32 = ctypes.windll.user32
+                # Check if high-order bit is set (key is pressed)
+                return bool(user32.GetAsyncKeyState(0x11) & 0x8000)
+            except Exception:
+                return False
+        elif platform.system() == 'Darwin':
+            # macOS - check Command key (Cmd) using multiple methods
+            # Method 1: Try Quartz CGEventSource
+            try:
+                from Quartz import CGEventSourceKeyState, kCGEventSourceStateHIDSystemState
+                # kVK_Command = 0x37
+                if CGEventSourceKeyState(kCGEventSourceStateHIDSystemState, 0x37):
+                    return True
+            except Exception:
+                pass
+            
+            # Method 2: Try AppKit NSEvent modifierFlags
+            try:
+                from AppKit import NSEvent
+                # NSEventModifierFlagCommand = 1 << 20 = 0x100000
+                flags = NSEvent.modifierFlags()
+                if flags & 0x100000:  # Command key
+                    return True
+            except Exception:
+                pass
+            
+            # Method 3: Fall back to DPG (if it works on macOS)
+            try:
+                if hasattr(dpg, 'mvKey_ModSuper'):
+                    return dpg.is_key_down(dpg.mvKey_ModSuper)
+            except Exception:
+                pass
+            
+            return False
+        return False
 
     def run(self):
         """Run the application."""
@@ -129,22 +183,27 @@ class LauncherApp:
         # Load fonts
         with dpg.font_registry():
             try:
-                # Common system monospaced fonts
-                font_paths = [
-                    "/System/Library/Fonts/Supplemental/Courier New.ttf",
+                # 1. Monospaced font for README
+                mono_paths = [
+                    "C:/Windows/Fonts/consola.ttf", # Windows
+                    "/System/Library/Fonts/Supplemental/Courier New.ttf", # Mac
                     "/System/Library/Fonts/Monaco.ttf",
                     "/Library/Fonts/Andale Mono.ttf"
                 ]
-                for path in font_paths:
+                for path in mono_paths:
                     if os.path.exists(path):
                         self.mono_font = dpg.add_font(path, 18)
+                        # Create a smaller version for the caption
+                        self.caption_font = dpg.add_font(path, 10)
                         break
+
             except Exception as e:
-                logger.debug(f"Failed to load monospaced font: {e}")
+                logger.debug(f"Failed to load fonts: {e}")
 
         with dpg.handler_registry():
             dpg.add_mouse_click_handler(callback=self._on_mouse_click)
             dpg.add_key_press_handler(callback=self._on_key_press)
+            dpg.add_key_release_handler(callback=self._on_key_release)
 
         self._build_ui()
         
@@ -189,6 +248,7 @@ class LauncherApp:
         # Main loop
         while dpg.is_dearpygui_running():
             self._update_countdown()
+            self._check_install_complete()
             dpg.render_dearpygui_frame()
 
         dpg.destroy_context()
@@ -332,7 +392,16 @@ class LauncherApp:
                 dpg.add_table_column(width_fixed=True)   # Info Button
                 
                 with dpg.table_row():
-                    dpg.add_text(f'TD Launcher Plus {APP_VERSION}', color=[50, 255, 0, 255])
+                    with dpg.group(horizontal=True):
+                        dpg.add_text(f'TD Launcher Plus v{APP_VERSION}', color=[50, 255, 0, 255], tag="header_title")
+                        with dpg.group():
+                            dpg.add_spacer(height=0)
+                            dpg.add_text('by Function Store', color=[100, 100, 100, 255], tag="header_caption")
+                    
+                    # Bind smaller mono font to caption only
+                    if hasattr(self, 'caption_font') and self.caption_font:
+                        dpg.bind_item_font("header_caption", self.caption_font)
+                        
                     dpg.add_button(label="Info", callback=self._show_about_modal, small=True)
             
             dpg.add_separator()
@@ -664,10 +733,11 @@ class LauncherApp:
             else:
                 display_name = filename
 
-            # Skip if we've already shown this path
-            if file_path in shown_paths:
+            # Skip if we've already shown this path (normalize for case/slash differences)
+            norm_path = os.path.normcase(os.path.normpath(os.path.abspath(file_path)))
+            if norm_path in shown_paths:
                 continue
-            shown_paths.add(file_path)
+            shown_paths.add(norm_path)
             self.visible_recent_files.append(file_path)
 
             exists = os.path.exists(file_path)
@@ -928,6 +998,8 @@ class LauncherApp:
 
         # 1. Rebuild Header
         if dpg.does_item_exist("readme_header_group"):
+            if dpg.does_item_exist("readme_edit_header_btn"):
+                dpg.delete_item("readme_edit_header_btn")
             dpg.delete_item("readme_header_group", children_only=True)
             with dpg.group(horizontal=True, parent="readme_header_group"):
                 dpg.add_text("Project Info", color=[200, 200, 200, 255])
@@ -942,6 +1014,10 @@ class LauncherApp:
 
         # 2. Rebuild Content
         if dpg.does_item_exist("readme_content_group"):
+            # Explicitly delete tagged grandchildren first (DPG alias cleanup bug)
+            for tag in ("readme_gutter_text", "readme_content_display", "readme_content_text"):
+                if dpg.does_item_exist(tag):
+                    dpg.delete_item(tag)
             dpg.delete_item("readme_content_group", children_only=True)
             
             gutter = ""
@@ -1648,18 +1724,59 @@ class LauncherApp:
             if dpg.does_item_exist("readme_content_text"):
                 dpg.set_value("readme_content_text", "")
 
+    def _on_key_release(self, sender, app_data):
+        """Track modifier key releases."""
+        key_code = app_data
+        # Use the same modifier codes as _on_key_press for consistent detection
+        _modifier_codes = {
+            getattr(dpg, 'mvKey_ModCtrl', 0),  # DPG 2.0+ (either Ctrl)
+            getattr(dpg, 'mvKey_LControl', 341), getattr(dpg, 'mvKey_RControl', 345),
+            341, 345,  # Ctrl (GLFW fallback codes)
+            343, 347,  # Command (macOS)
+        }
+        if key_code in _modifier_codes:
+            self._modifier_keys.discard(key_code)
+            self._modifier_held = len(self._modifier_keys) > 0
+
     def _on_key_press(self, sender, app_data):
         """Handle key presses."""
         self._cancel_countdown()
         key_code = app_data
 
-        # Check for modifier keys (Cmd on macOS, Ctrl on Windows/Linux)
-        modifier_held = (
-            dpg.is_key_down(dpg.mvKey_LControl) or
-            dpg.is_key_down(dpg.mvKey_RControl) or
-            dpg.is_key_down(343) or  # Left Command (macOS)
-            dpg.is_key_down(347)     # Right Command (macOS)
-        )
+        # Track modifier keys manually (more reliable than is_key_down in packaged builds)
+        _modifier_codes = {
+            getattr(dpg, 'mvKey_ModCtrl', 0),  # DPG 2.0+ (either Ctrl)
+            getattr(dpg, 'mvKey_LControl', 341), getattr(dpg, 'mvKey_RControl', 345),
+            341, 345,  # Ctrl (GLFW fallback codes)
+            343, 347,  # Command (macOS)
+        }
+        if key_code in _modifier_codes:
+            self._modifier_keys.add(key_code)
+            self._modifier_held = True
+            return  # Don't process modifier-only presses as shortcuts
+
+        # HYBRID APPROACH: Check both event tracking AND is_key_down() as fallback
+        # In packaged builds, one or the other may work depending on DPG version
+        modifier_held = self._modifier_held
+        
+        # PRIMARY FIX: Use Windows API / macOS Carbon to check Ctrl directly
+        # This bypasses DPG's event handlers which may not receive Ctrl in packaged builds
+        if not modifier_held:
+            modifier_held = self._is_ctrl_pressed()
+        
+        # Fallback: If that didn't work, try DPG's is_key_down()
+        if not modifier_held:
+            try:
+                # Try DPG 2.0+ style first
+                if hasattr(dpg, 'mvKey_ModCtrl'):
+                    modifier_held = dpg.is_key_down(dpg.mvKey_ModCtrl)
+                # Fallback to specific Ctrl keys
+                if not modifier_held and hasattr(dpg, 'mvKey_LControl'):
+                    modifier_held = dpg.is_key_down(dpg.mvKey_LControl) or dpg.is_key_down(dpg.mvKey_RControl)
+            except Exception as e:
+                logger.debug(f"is_key_down fallback failed: {e}")
+        
+
 
         # 1. Ctrl+S / Cmd+S - Save README (Bypasses edit block)
         if modifier_held and key_code == getattr(dpg, 'mvKey_S', -1):
@@ -1683,20 +1800,34 @@ class LauncherApp:
                 return
 
         # 2. E Key - Toggle/Edit README
-        shift_held = dpg.is_key_down(dpg.mvKey_LShift) or dpg.is_key_down(dpg.mvKey_RShift)
-        
-        if key_code == getattr(dpg, 'mvKey_E', -1) and not modifier_held:
-            # Shift+E: Start Edit (Show first if hidden)
-            if shift_held:
-                logger.debug("Shortcut: Starting Edit via Shift+E")
-                if not self.config.show_readme:
-                    self._on_toggle_readme(None, True)
-                    if dpg.does_item_exist("show_readme_checkbox"):
-                        dpg.set_value("show_readme_checkbox", True)
-                self._on_readme_text_clicked(None, None)
-                return
+        if key_code == getattr(dpg, 'mvKey_E', -1) and modifier_held:
+            # Ctrl+E / Cmd+E: Start Edit (Show first if hidden)
+            logger.debug("Shortcut: Starting Edit via Ctrl+E")
+            was_hidden = not self.config.show_readme
+            if was_hidden:
+                self._on_toggle_readme(None, True)
+                if dpg.does_item_exist("show_readme_checkbox"):
+                    dpg.set_value("show_readme_checkbox", True)
+            # Enter edit mode (toggle resets this, so call it after)
+            self.readme_editing_active = True
+            # Load content for editing
+            self.readme_edit_buffer = ""
+            if self.current_readme_path and os.path.exists(self.current_readme_path):
+                try:
+                    with open(self.current_readme_path, 'r', encoding='utf-8') as f:
+                        self.readme_edit_buffer = f.read()
+                except Exception:
+                    pass
+            self._rebuild_readme_ui_internal()
+            # Focus the editor - use split_frame if UI was just built to let it render first
+            if was_hidden:
+                dpg.split_frame()  # Let DPG render the new UI first
+            if dpg.does_item_exist("readme_content_text"):
+                dpg.focus_item("readme_content_text")
+            return
 
-            # E (No Shift): Toggle On/Off
+        if key_code == getattr(dpg, 'mvKey_E', -1) and not modifier_held:
+            # E (No modifier): Toggle On/Off
             new_state = not self.config.show_readme
             logger.debug(f"Shortcut: Toggling README to {new_state} via E")
             self._on_toggle_readme(None, new_state)
@@ -2105,6 +2236,14 @@ class LauncherApp:
         if not self.td_url or not self.td_uri:
             return
 
+        # Skip download if installer already exists next to the project file
+        if os.path.exists(self.td_uri):
+            logger.info(f"Installer already exists: {self.td_uri}")
+            dpg.set_value("download_filter", 'z')
+            dpg.set_value("install_filter", 'a')
+            self._show_install_prompt_modal()
+            return
+
         logger.info(f"Downloading {self.td_url}")
         dpg.set_value("download_filter", 'b')
 
@@ -2125,10 +2264,46 @@ class LauncherApp:
             dpg.configure_item('download_progress_bar', overlay='100%')
             dpg.set_value("download_filter", 'z')
             dpg.set_value("install_filter", 'a')
+            self._show_install_prompt_modal()
 
         except Exception as e:
             logger.error(f"Download failed: {e}")
             dpg.set_value("download_filter", 'd')
+
+    def _show_install_prompt_modal(self):
+        """Show modal prompting user to install the downloaded TD version."""
+        modal_tag = "install_prompt_modal"
+        if dpg.does_item_exist(modal_tag):
+            dpg.delete_item(modal_tag)
+
+        filename = os.path.basename(self.td_uri) if self.td_uri else ""
+        viewport_width = dpg.get_viewport_width()
+        viewport_height = dpg.get_viewport_height()
+        modal_width = 380
+        modal_height = 130
+
+        with dpg.window(
+            label="Download Complete",
+            modal=True,
+            tag=modal_tag,
+            no_resize=True,
+            no_move=False,
+            width=modal_width,
+            height=modal_height,
+            pos=[(viewport_width - modal_width) // 2, (viewport_height - modal_height) // 2]
+        ):
+            dpg.add_text(f"Ready to install {self.build_info}")
+            dpg.add_text(filename, color=[150, 150, 150, 255])
+            dpg.add_spacer(height=5)
+            with dpg.group(horizontal=True):
+                dpg.add_button(
+                    label="Install",
+                    callback=lambda: (self._on_install(None, None), dpg.delete_item(modal_tag))
+                )
+                dpg.add_button(
+                    label="Later",
+                    callback=lambda: dpg.delete_item(modal_tag)
+                )
 
     def _on_install(self, sender, app_data):
         """Handle install button click."""
@@ -2141,9 +2316,82 @@ class LauncherApp:
             if platform.system() == 'Darwin':
                 subprocess.Popen(['open', self.td_uri])
             else:
-                subprocess.Popen([self.td_uri])
+                os.startfile(self.td_uri)
+            # Start monitoring for installation completion
+            if self.build_info:
+                self.install_pending_version = self.build_info
+                self.install_check_time = time.time()
+                logger.info(f"Monitoring registry for {self.build_info} installation...")
         except Exception as e:
             logger.error(f"Install failed: {e}")
+
+    def _check_install_complete(self):
+        """Poll registry to check if pending installation has completed."""
+        if not self.install_pending_version:
+            return
+
+        # Check every 3 seconds
+        now = time.time()
+        if now - self.install_check_time < 3.0:
+            return
+        self.install_check_time = now
+
+        # Re-scan registry for new versions
+        self.td_manager.discover_versions()
+        if self.td_manager.is_version_installed(self.install_pending_version):
+            logger.info(f"{self.install_pending_version} installed successfully")
+            installed_uri = self.td_uri
+            self.install_pending_version = None
+            # Refresh the version panel to reflect the new installation
+            self._update_version_panel(skip_analysis=True)
+            # Offer to delete the installer file
+            if installed_uri and os.path.exists(installed_uri):
+                self._show_delete_installer_modal(installed_uri)
+
+    def _show_delete_installer_modal(self, installer_path):
+        """Show modal offering to delete the installer file after successful install."""
+        modal_tag = "delete_installer_modal"
+        if dpg.does_item_exist(modal_tag):
+            dpg.delete_item(modal_tag)
+
+        filename = os.path.basename(installer_path)
+        viewport_width = dpg.get_viewport_width()
+        viewport_height = dpg.get_viewport_height()
+        modal_width = 380
+        modal_height = 130
+
+        with dpg.window(
+            label="Installation Complete",
+            modal=True,
+            tag=modal_tag,
+            no_resize=True,
+            no_move=False,
+            width=modal_width,
+            height=modal_height,
+            pos=[(viewport_width - modal_width) // 2, (viewport_height - modal_height) // 2]
+        ):
+            dpg.add_text(f"Installation complete. Delete installer?")
+            dpg.add_text(filename, color=[150, 150, 150, 255])
+            dpg.add_spacer(height=5)
+            with dpg.group(horizontal=True):
+                dpg.add_button(
+                    label="Delete",
+                    callback=lambda: self._delete_installer(installer_path, modal_tag)
+                )
+                dpg.add_button(
+                    label="Keep",
+                    callback=lambda: dpg.delete_item(modal_tag)
+                )
+
+    def _delete_installer(self, installer_path, modal_tag):
+        """Delete the installer file and close the modal."""
+        try:
+            os.remove(installer_path)
+            logger.info(f"Deleted installer: {installer_path}")
+        except Exception as e:
+            logger.error(f"Failed to delete installer: {e}")
+        if dpg.does_item_exist(modal_tag):
+            dpg.delete_item(modal_tag)
 
     def _show_about_modal(self, sender, app_data):
         """Show the About / Info modal."""
