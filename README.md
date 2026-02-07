@@ -34,10 +34,12 @@ When you open a `.toe` file with TD Launcher Plus (via double-click or drag-and-
 - **Interruption:** Clicking anywhere or pressing a key stops the timer, allowing you to manually override the TD version or view project notes.
 
 ### 2. Dashboard Mode (Project Manager)
-Launching the app directly opens the project dashboard. Here you can browse your **Recent Files** and **Templates** library. 
+Launching the app directly opens the project dashboard. Here you can browse your **Recent Files** and **Templates** library.
 - **Smart Discovery:** The tool scans your system for all installed TouchDesigner versions and presents them as options.
-- **Integrated Docs:** Selecting a project instantly loads its project info and README.md (if present) into the side panel. 
+- **Default Template:** A built-in "Default" entry in Templates lets you launch any TD version with its default startup file.
+- **Integrated Docs:** Selecting a project instantly loads its project info and README.md (if present) into the side panel.
 - **Keyboard Workflow:** Designed for speed with full keyboard navigation, tab memory, and debounced analysis for a smooth browsing experience.
+- **First-Run Setup:** On first launch, a one-time prompt guides you through setting TD Launcher Plus as your default `.toe` handler (automatic on Windows, manual instructions on macOS).
 
 ## How to use
 
@@ -95,7 +97,7 @@ Without this utility, only files launched through TD Launcher Plus appear in the
 - **Cmd + Up** (Mac) / **Ctrl + Up** (Win): Move selected template up (Templates tab only)
 - **Cmd + Down** (Mac) / **Ctrl + Down** (Win): Move selected template down (Templates tab only)
 - **Cmd + S** (Mac) / **Ctrl + S** (Win): **Save** README changes (while in Edit Mode)
-- **Cmd + D** (Mac) / **Ctrl + D** (Win): **Quick Launch** top template with newest TD version
+- **Cmd + D** (Mac) / **Ctrl + D** (Win): **Quick Launch** TouchDesigner with default startup (newest version)
 - **Cmd + 1-9** (Mac) / **Ctrl + 1-9** (Win): **Launch template by position** (1st, 2nd, 3rd, etc.) with newest TD version
 
 ---
@@ -110,7 +112,7 @@ TD Launcher Plus analyzes each `.toe` file to determine which TouchDesigner vers
 - **Missing version handling:** If the required version isn't installed, TD Launcher Plus shows a download link and lets you choose an alternative version
 
 ### Recent Files
-TD Launcher Plus keeps track of recently opened projects. When you launch a `.toe` file, it's automatically added to the Recent Files list for quick access later.
+TD Launcher Plus keeps track of recently opened projects. Files are added to the Recent Files list only when actually launched (via button, double-click, countdown, or Enter) — not when simply browsing. Browsed files still appear in the UI for the current session.
 
 **Color Coding:**
 - **Vibrant Green:** **Active Session** — The file you currently have selected or just launched.
@@ -128,9 +130,12 @@ TD Launcher Plus keeps track of recently opened projects. When you launch a `.to
 ### Templates
 Save frequently-used project templates for quick access. Templates appear in a separate tab alongside Recent Files.
 
-- Click **"Add Template..."** to add a `.toe` file as a template
-- Templates persist between sessions
+- A built-in **"Default (new project)"** entry is always at the top — launches TouchDesigner with its default startup file, letting you pick which version to open
+- Click **"Add Templates..."** to add `.toe` files as templates
+- Templates always default to the **latest installed TD version** in the version picker
+- Reorder templates with the **^** / **v** buttons or **Cmd/Ctrl + Up/Down**
 - Remove templates with the **X** button
+- Templates persist between sessions
 
 ### Project Icons
 TD Launcher Plus can display project icons next to each file. Enable with the **"Show Icons"** checkbox. Icons are automatically generated when you save a project in TouchDesigner using the `TDLauncherPlusUtility.tox` component.
