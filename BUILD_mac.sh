@@ -30,6 +30,16 @@ rm -rf dist/
 echo "Running PyInstaller..."
 pyinstaller --noconfirm --log-level=WARN "TD Launcher Plus.spec"
 
+# Ad-hoc codesign the app bundle
+# This helps with Gatekeeper and permissions on macOS
+if command -v codesign &> /dev/null; then
+    echo "Ad-hoc codesigning the app bundle..."
+    codesign --force --deep --sign - "dist/TD Launcher Plus.app"
+    echo "✅ Codesigning completed"
+else
+    echo "⚠️  codesign tool not found. Skipping signing."
+fi
+
 echo "Build completed!"
 echo "App bundle created at: dist/TD Launcher Plus.app"
 

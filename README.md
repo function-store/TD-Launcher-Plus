@@ -50,9 +50,10 @@ Launching the app directly opens the project dashboard. Here you can browse your
 ### macOS
 1. Download the `.dmg` file from the releases page
 2. Open the DMG and drag "TD Launcher Plus" to the "Applications" folder
-3. **File association is automatic!** TD Launcher Plus will appear as an option for `.toe` files
-4. **Optional:** To make it the default, right-click any `.toe` file → "Get Info" → set "Open with" to "TD Launcher Plus" → "Change All..."
-5. Double-clicking `.toe` files will now launch them with TD Launcher Plus
+3. **Important (Security):** Because the app is not notarized, macOS will block it on first launch. See the [Security section](#security--installation-macos) below for how to open it.
+4. **File association is automatic!** TD Launcher Plus will appear as an option for `.toe` files
+5. **Optional:** To make it the default, right-click any `.toe` file → "Get Info" → set "Open with" to "TD Launcher Plus" → "Change All..."
+6. Double-clicking `.toe` files will now launch them with TD Launcher Plus
 
 ### Alternative Usage
 You can also drag and drop `.toe` files directly onto the TD Launcher Plus app icon.
@@ -299,15 +300,31 @@ The build process requires these Python packages (automatically installed by `se
 #### Troubleshooting
 
 
-**TouchDesigner not detected:**
-- Ensure TouchDesigner is installed in `/Applications/`
-- Check that `toeexpand` exists in TouchDesigner.app bundle
-
 **File association not working:**
 - Ensure app is installed in `/Applications/`
 - Try: Right-click `.toe` file → "Open With" → "TD Launcher Plus"
 - Restart Finder: `killall Finder`
 - Enable debug logging: `export TD_LAUNCHER_DEBUG=1` and check `~/Desktop/td_launcher_debug.log`
+
+### Security & Installation (macOS)
+
+Because TD Launcher Plus is an open-source tool and is not currently signed with an Apple Developer certificate, macOS Gatekeeper will show a warning: *"Apple could not verify 'TD Launcher Plus.app' is free of malware."*
+
+#### How to open it:
+1. Double-click the app to try to open it.
+2. When the warning appears, click **Done** (do **not** click "Move to Trash").
+3. Open **System Settings** and navigate to **Privacy & Security**.
+4. Scroll down to the "Security" section and click **Open Anyway** next to the message about "TD Launcher Plus.app".
+5. A final prompt will appear; click **Open**.
+6. You only need to do this once.
+
+![Apple Security](./docs/apple_security.png)
+
+#### Alternative (Terminal):
+If you prefer the command line, you can strip the "quarantine" attribute that macOS adds to downloaded files:
+```bash
+xattr -cr "/Applications/TD Launcher Plus.app"
+```
 
 ---
 

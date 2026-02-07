@@ -8,6 +8,9 @@ echo Cleaning previous build...
 if exist "dist\td_launcher_plus.exe" del /f "dist\td_launcher_plus.exe"
 if exist "build\td_launcher_plus" rmdir /s /q "build\td_launcher_plus"
 
+echo Installing dependencies...
+%PYTHON_EXECUTABLE% -m pip install -r requirements.txt
+
 %PYTHON_EXECUTABLE% .\py\Scripts\pyinstaller.exe --noconfirm --log-level=WARN ^
 --onefile --nowindow ^
 --windowed ^
