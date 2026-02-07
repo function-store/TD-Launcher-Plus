@@ -81,6 +81,7 @@ Without this utility, only files launched through TD Launcher Plus appear in the
 - **Up / W**: Select previous file
 - **Down / S**: Select next file
 - **Enter / Return**: Launch selected project (or start countdown)
+- **Space**: Toggle focus between **File List** (Blue) and **Version List** (Green)
 - **Esc**: Quit application
 
 **Interface Toggles**

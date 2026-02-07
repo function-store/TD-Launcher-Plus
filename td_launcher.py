@@ -346,7 +346,10 @@ class LauncherApp:
                 theme_tag = None
                 if state:
                     # Selected Themes
-                    if source == 'active':
+                    # Check for Global Version Focus first - Use Green Theme
+                    if hasattr(self, 'selection_focus') and self.selection_focus == 'versions':
+                        theme_tag = "selected_focused_theme"
+                    elif source == 'active':
                         theme_tag = "active_item_theme"
                     elif source == 'launcher':
                         theme_tag = "selected_launcher_theme"
@@ -469,6 +472,16 @@ class LauncherApp:
                         dpg.add_theme_color(dpg.mvThemeCol_HeaderHovered, header_blue, category=dpg.mvThemeCat_Core)
                         dpg.add_theme_color(dpg.mvThemeCol_HeaderActive, header_active, category=dpg.mvThemeCat_Core)
 
+            # Green theme for when Version List is Focused
+            if not dpg.does_item_exist("selected_focused_theme"):
+                header_green = [46, 180, 46, 120]
+                header_green_active = [46, 180, 46, 180]
+                with dpg.theme(tag="selected_focused_theme"):
+                    with dpg.theme_component(dpg.mvAll):
+                         dpg.add_theme_color(dpg.mvThemeCol_Text, [255, 255, 255, 255], category=dpg.mvThemeCat_Core)
+                         dpg.add_theme_color(dpg.mvThemeCol_Header, header_green, category=dpg.mvThemeCat_Core)
+                         dpg.add_theme_color(dpg.mvThemeCol_HeaderHovered, header_green, category=dpg.mvThemeCat_Core)
+                         dpg.add_theme_color(dpg.mvThemeCol_HeaderActive, header_green_active, category=dpg.mvThemeCat_Core)
 
             with dpg.group(tag="main_ui_group"):
                 # Tab bar
@@ -1287,6 +1300,15 @@ class LauncherApp:
     def _on_version_selected(self, sender, app_data):
         """Handle version radio button selection."""
         self.selection_focus = 'versions'
+        
+        # Visual feedback: Refresh highlight to show Green (focused)
+        current_tab = self._get_current_tab()
+        idx = self.tab_selection_indices.get(current_tab, -1)
+        if idx >= 0:
+             prefix = "recent_file_" if current_tab == 'recent' else "template_"
+             tag = f"{prefix}{idx}"
+             self._set_row_highlight(tag, True)
+             
         self.readme_editing_active = False # Reclaim focus
         if dpg.does_item_exist("readme_content_text"):
             dpg.configure_item("readme_content_text", readonly=True)
@@ -1920,15 +1942,31 @@ class LauncherApp:
             if self.selection_focus == 'picker':
                 if dpg.does_item_exist("td_version"):
                     self.selection_focus = 'versions'
-                    # Visual feedback: Dim picker, highlight versions
-                    self._clear_all_selections()
+                    # Visual feedback: Picker turns Green, highlight versions
+                    
+                    # Refresh picker highlight to pick up Green theme (don't clear selection)
+                    current_tab = self._get_current_tab()
+                    idx = self.tab_selection_indices.get(current_tab, -1)
+                    if idx >= 0:
+                         prefix = "recent_file_" if current_tab == 'recent' else "template_"
+                         tag = f"{prefix}{idx}"
+                         self._set_row_highlight(tag, True)
                     
                     # Highlight version selection
                     self._move_version_selection(0)
             else:
                 self.selection_focus = 'picker'
                 self.readme_editing_active = False # Reclaim focus on space toggle
-                # Visual feedback: Restore picker selection
+                # Visual feedback: Picker turns Blue
+                
+                # Refresh picker highlight to pick up Blue theme
+                current_tab = self._get_current_tab()
+                idx = self.tab_selection_indices.get(current_tab, -1)
+                if idx >= 0:
+                     prefix = "recent_file_" if current_tab == 'recent' else "template_"
+                     tag = f"{prefix}{idx}"
+                     self._set_row_highlight(tag, True)
+                     
                 self._move_picker_selection(0)
             return
             
