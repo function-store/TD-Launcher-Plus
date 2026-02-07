@@ -2546,17 +2546,17 @@ class LauncherApp:
 
         viewport_width = dpg.get_viewport_width()
         viewport_height = dpg.get_viewport_height()
-        modal_width = 460
-        modal_height = 200 if platform.system() == 'Darwin' else 250
+        modal_width = 480
+        is_mac = platform.system() == 'Darwin'
+        is_win = platform.system() == 'Windows'
+        # Check if installer already set .toe association (Windows only)
+        installer_handled = is_win and self._is_installer_assoc_set()
+        modal_height = 300 if installer_handled else 320
 
         def _dismiss():
             self.config.has_prompted_file_assoc = True
             if dpg.does_item_exist(modal_tag):
                 dpg.delete_item(modal_tag)
-
-        def _set_windows_assoc_and_dismiss():
-            self._set_windows_file_association()
-            _dismiss()
 
         with dpg.window(
             label="Welcome to TD Launcher Plus by Function Store",
@@ -2572,57 +2572,88 @@ class LauncherApp:
             dpg.add_text(f"TD Launcher Plus v{APP_VERSION}", color=[50, 255, 0, 255])
             dpg.add_spacer(height=5)
 
-            if platform.system() == 'Darwin':
+            # --- File association instructions (skip if installer handled it) ---
+            if not installer_handled:
                 dpg.add_text("Set as default for .toe files", color=[255, 200, 50, 255])
                 dpg.add_spacer(height=4)
-                dpg.add_text(
-                    "  Right-click any .toe file > Get Info > Open with\n"
-                    "  > select TD Launcher Plus > Change All...",
-                    color=[180, 180, 180, 255]
+                if is_mac:
+                    dpg.add_text(
+                        "  Right-click any .toe file > Get Info > Open with\n"
+                        "  > select TD Launcher Plus > Change All...",
+                        color=[180, 180, 180, 255]
+                    )
+                else:
+                    # Register ProgID silently so app appears in "Open With"
+                    self._set_windows_file_association()
+                    dpg.add_text(
+                        "  Right-click any .toe file > Open with\n"
+                        "  > Choose another app > select TD Launcher Plus\n"
+                        "  > check \"Always use this app\"",
+                        color=[180, 180, 180, 255]
+                    )
+                dpg.add_spacer(height=10)
+
+            # --- Utility TOX info (always shown) ---
+            dpg.add_text("Companion utility for TouchDesigner", color=[255, 200, 50, 255])
+            dpg.add_spacer(height=4)
+            with dpg.group(horizontal=True):
+                dpg.add_text("  Get", color=[180, 180, 180, 255])
+                link_btn = dpg.add_button(
+                    label="TDLauncherPlusUtility.tox",
+                    callback=lambda: webbrowser.open(
+                        "https://github.com/function-store/TD-Launcher-Plus/releases/latest"
+                    ),
+                    small=True,
                 )
-                dpg.add_spacer(height=12)
-                with dpg.table(header_row=False, width=-1):
-                    dpg.add_table_column(width_stretch=True)
-                    dpg.add_table_column(width_fixed=True)
-                    dpg.add_table_column(width_stretch=True)
-                    with dpg.table_row():
-                        dpg.add_text("")
-                        dpg.add_button(label="Got it", callback=lambda: _dismiss(), width=80)
-                        dpg.add_text("")
-            else:
-                dpg.add_text(
-                    "Set TD Launcher Plus as the default app\n"
-                    "for opening .toe files?",
-                )
-                dpg.add_spacer(height=4)
-                dpg.add_text(
-                    "  This will open Windows Settings where you\n"
-                    "  can search for .toe and select TD Launcher Plus.",
-                    color=[180, 180, 180, 255]
-                )
-                dpg.add_spacer(height=12)
-                with dpg.table(header_row=False, width=-1):
-                    dpg.add_table_column(width_stretch=True)
-                    dpg.add_table_column(width_fixed=True)
-                    dpg.add_table_column(width_fixed=True)
-                    dpg.add_table_column(width_stretch=True)
-                    with dpg.table_row():
-                        dpg.add_text("")
-                        dpg.add_button(
-                            label="Open Settings",
-                            callback=lambda: _set_windows_assoc_and_dismiss(),
-                            width=120
-                        )
-                        dpg.add_button(label="Skip", callback=lambda: _dismiss(), width=80)
-                        dpg.add_text("")
+                with dpg.theme() as link_theme:
+                    with dpg.theme_component(dpg.mvButton):
+                        dpg.add_theme_color(dpg.mvThemeCol_Button, [0, 0, 0, 0])
+                        dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, [0, 0, 0, 0])
+                        dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, [0, 0, 0, 0])
+                        dpg.add_theme_color(dpg.mvThemeCol_Text, [100, 180, 255, 255])
+                dpg.bind_item_theme(link_btn, link_theme)
+                dpg.add_text("and add it to", color=[180, 180, 180, 255])
+            dpg.add_text(
+                "  your startup .toe file. It syncs recent files and\n"
+                "  auto-generates project icons for files saved\n"
+                "  directly in TouchDesigner of `/perform` window!",
+                color=[180, 180, 180, 255]
+            )
+
+            dpg.add_spacer(height=12)
+            with dpg.table(header_row=False, width=-1):
+                dpg.add_table_column(width_stretch=True)
+                dpg.add_table_column(width_fixed=True)
+                dpg.add_table_column(width_stretch=True)
+                with dpg.table_row():
+                    dpg.add_text("")
+                    dpg.add_button(label="Got it", callback=lambda: _dismiss(), width=80)
+                    dpg.add_text("")
+
+    def _is_installer_assoc_set(self):
+        """Check if the Inno Setup installer already configured .toe association."""
+        try:
+            import winreg
+            # The installer registers ProgID "TDLauncherPlusFile.toe" under HKA (HKLM or HKCU)
+            # and sets .toe default to that ProgID. Check both locations.
+            for hive in (winreg.HKEY_LOCAL_MACHINE, winreg.HKEY_CURRENT_USER):
+                try:
+                    with winreg.OpenKey(hive, r"Software\Classes\.toe") as key:
+                        value, _ = winreg.QueryValueEx(key, "")
+                        if value == "TDLauncherPlusFile.toe":
+                            return True
+                except FileNotFoundError:
+                    continue
+        except Exception:
+            pass
+        return False
 
     def _set_windows_file_association(self):
-        """Register .toe file association and open Settings for user confirmation.
+        """Register .toe ProgID so the app appears in the 'Open With' list.
 
         Windows 10/11 use a hash-protected UserChoice key that prevents
         programmatic default-app changes. We register the ProgID so the app
-        appears in "Open With", then open the Settings page for the user to
-        confirm.
+        appears in "Open With", then the user can set it as default manually.
         """
         try:
             import winreg
@@ -2651,10 +2682,7 @@ class LauncherApp:
             SHCNF_IDLIST = 0x0000
             ctypes.windll.shell32.SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, None, None)
 
-            logger.info("File association registered for .toe files, opening Settings...")
-
-            # Open Windows Settings default apps page for user to confirm
-            os.startfile("ms-settings:defaultapps")
+            logger.info("File association registered for .toe files")
 
         except Exception as e:
             logger.error(f"Failed to set file association: {e}")
