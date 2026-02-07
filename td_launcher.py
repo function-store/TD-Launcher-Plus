@@ -1851,9 +1851,8 @@ class LauncherApp:
             self._on_toggle_full_history(None, new_state, None)
             return
             
-        # 5. Ctrl+Space / Cmd+Space - Quick Launch Top Template
-        # GLFW key code for Space is 32. 
-        if modifier_held and (key_code == 32 or key_code == 524 or key_code == getattr(dpg, 'mvKey_Space', -1)):
+        # 5. Ctrl+D / Cmd+D - Quick Launch Top Template (D for Default)
+        if modifier_held and key_code == getattr(dpg, 'mvKey_D', -1):
             templates = self.config.get_templates()
             if templates:
                 top_template = templates[0]
