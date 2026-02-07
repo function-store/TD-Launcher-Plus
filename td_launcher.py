@@ -2131,8 +2131,7 @@ class LauncherApp:
                 version = dpg.get_value("td_version") if dpg.does_item_exist("td_version") else self.build_info
                 if version and self.td_manager.is_version_installed(version):
                     self.countdown_enabled = False
-                    # Double-click should NOT promote to top
-                    self._on_launch(sender, app_data, promote=False)
+                    self._on_launch(sender, app_data)
                     self.last_click_time = 0
                     self.last_clicked_path = None
                 else:
@@ -2309,10 +2308,17 @@ class LauncherApp:
         except Exception as e:
             logger.error(f"Failed to launch: {e}")
 
-    def _on_launch(self, sender, app_data, promote=True):
-        """Handle launch button click."""
+    def _on_launch(self, sender=None, app_data=None, user_data=None):
+        """Handle launch button click.
+
+        user_data: DearPyGui passes this as 3rd arg. Set to False to suppress adding to recents.
+        """
         if not self.selected_file:
             return
+
+        # DearPyGui callbacks pass user_data (None) as 3rd positional arg,
+        # which would shadow a promote=True default. Treat None as True.
+        promote = user_data is not False
 
         # Get selected version
         version = dpg.get_value("td_version") if dpg.does_item_exist("td_version") else self.build_info
