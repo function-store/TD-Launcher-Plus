@@ -8,6 +8,7 @@ import plistlib
 import subprocess
 import logging
 from typing import Dict, Optional, Tuple
+from utils import get_resource_path
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +29,12 @@ class TDManager:
         return self.versions
 
     def _query_windows_registry(self) -> Dict[str, dict]:
-        """Query Windows registry for TouchDesigner installations."""
+        """Query Windows registry for TouchDesigner installations.
+
+        Registry layout: HKLM\\SOFTWARE\\Derivative\\TouchDesigner
+        Values are version numbers (e.g. '2025.32280') and corresponding
+        paths stored as 'Path', 'Path_3', 'Path_6', etc.
+        """
         try:
             import winreg
         except ImportError:
@@ -39,33 +45,42 @@ class TDManager:
         try:
             key = winreg.OpenKey(
                 winreg.HKEY_LOCAL_MACHINE,
-                r"SOFTWARE\Derivative"
+                r"SOFTWARE\Derivative\TouchDesigner"
             )
 
-            num_subkeys = winreg.QueryInfoKey(key)[0]
+            num_values = winreg.QueryInfoKey(key)[1]
 
-            for i in range(num_subkeys):
-                subkey_name = winreg.EnumKey(key, i)
-                try:
-                    subkey = winreg.OpenKey(key, subkey_name)
-                    try:
-                        install_path = winreg.QueryValueEx(subkey, "Path")[0]
-                        exe_path = os.path.join(install_path, "bin", "TouchDesigner.exe")
-                        if os.path.exists(exe_path):
-                            td_dict[subkey_name] = {
-                                'install_path': install_path,
-                                'executable': exe_path
-                            }
-                    except WindowsError:
-                        pass
-                    finally:
-                        winreg.CloseKey(subkey)
-                except WindowsError:
-                    pass
+            # Collect all values: version numbers and their path entries
+            versions = []
+            paths = {}
+            for i in range(num_values):
+                name, value, vtype = winreg.EnumValue(key, i)
+                if name.startswith('Path'):
+                    paths[name] = value
+                elif re.match(r'^\d{4}\.\d+$', name):
+                    versions.append(name)
+
+            # Match each version to its install path
+            for version in versions:
+                install_path = None
+                # Check all path entries for one containing this version
+                for path_name, path_value in paths.items():
+                    if version in path_value:
+                        install_path = path_value
+                        break
+
+                if install_path:
+                    exe_path = os.path.join(install_path, "bin", "TouchDesigner.exe")
+                    if os.path.exists(exe_path):
+                        td_key = f"TouchDesigner.{version}"
+                        td_dict[td_key] = {
+                            'install_path': install_path,
+                            'executable': exe_path
+                        }
 
             winreg.CloseKey(key)
 
-        except WindowsError:
+        except (WindowsError, FileNotFoundError):
             pass
 
         return td_dict
@@ -127,18 +142,26 @@ class TDManager:
 
         return td_dict
 
+    @staticmethod
+    def parse_version_string(version_str: str) -> Tuple[int, int]:
+        """Parse TouchDesigner version string into (year, build) tuple.
+        Handles 'TouchDesigner.2025.32280' or just '2025.32280'.
+        """
+        try:
+            # Remove prefix if present
+            if version_str.startswith('TouchDesigner.'):
+                version_str = version_str[len('TouchDesigner.'):]
+            
+            parts = version_str.split('.')
+            year = int(parts[0]) if len(parts) > 0 else -1
+            build = int(parts[1]) if len(parts) > 1 else -1
+            return (year, build)
+        except Exception:
+            return (-1, -1)
+
     def get_sorted_version_keys(self) -> list:
         """Get version keys sorted by year and build number."""
-        def parse_key(key: str) -> Tuple[int, int]:
-            try:
-                parts = key.split('.')
-                year = int(parts[1]) if len(parts) > 1 else -1
-                build = int(parts[2]) if len(parts) > 2 else -1
-                return (year, build)
-            except Exception:
-                return (-1, -1)
-
-        return sorted(list(self.versions.keys()), key=parse_key)
+        return sorted(list(self.versions.keys()), key=self.parse_version_string)
 
     def is_version_installed(self, version: str) -> bool:
         """Check if a specific version is installed."""
@@ -160,8 +183,7 @@ class TDManager:
         """Get path to toeexpand tool from an installed TD version."""
         if platform.system() == 'Windows':
             # On Windows, look for bundled toeexpand
-            current_dir = os.path.dirname(os.path.abspath(__file__))
-            toeexpand_path = os.path.join(current_dir, "toeexpand", "toeexpand.exe")
+            toeexpand_path = get_resource_path(os.path.join("toeexpand", "toeexpand.exe"))
             if os.path.exists(toeexpand_path):
                 return toeexpand_path
         else:
@@ -193,15 +215,21 @@ class TDManager:
         logger.info("Analyzing TOE file version...")
         logger.debug(f"Using toeexpand: {toeexpand_path}")
 
-        command = f'"{toeexpand_path}" -b "{file_path}"'
+        command = [toeexpand_path, '-b', file_path]
         logger.debug(f"Running command: {command}")
 
         try:
+            startupinfo = None
+            if platform.system() == 'Windows':
+                startupinfo = subprocess.STARTUPINFO()
+                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                startupinfo.wShowWindow = subprocess.SW_HIDE
+
             process = subprocess.Popen(
                 command,
-                shell=True,
                 stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE
+                stderr=subprocess.PIPE,
+                startupinfo=startupinfo
             )
             out, err = process.communicate()
 

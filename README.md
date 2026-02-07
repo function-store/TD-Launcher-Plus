@@ -1,7 +1,9 @@
 # TD Launcher Plus
 A focused project dashboard for TouchDesigner. Launch .toe files with the correct version automatically, open recent project files, or custom template projects (startup files). With optional icon preview, and project documentation viewer and editor.
 
-This repo is based on (TD Launcher by EnviralDesign)[https://github.com/enviraldesign/TD-Launcher] (MIT License).
+This repo is based on [TD Launcher by EnviralDesign](https://github.com/enviraldesign/TD-Launcher) (MIT License).
+
+[![Download Latest Release](https://img.shields.io/github/v/release/function-store/TD-Launcher-Plus?style=for-the-badge&label=Download%20Latest&color=brightgreen)](https://github.com/function-store/TD-Launcher-Plus/releases/latest)
 
 ![image](./docs/TDLauncherPlus_recents.png)
 
@@ -81,10 +83,18 @@ Without this utility, only files launched through TD Launcher Plus appear in the
 - **Enter / Return**: Launch selected project (or start countdown)
 - **Esc**: Quit application
 
+**Interface Toggles**
+- **H**: Toggle **"Full History"** mode
+- **C**: Toggle **"Show Icons"**
+- **E**: Toggle **"Show Info"** (README) panel
+- **Shift + E**: Activate **Edit Mode** for the current README
+
 **File Management**
 - **Backspace / Delete**: Remove selected file from the list (with confirmation)
 - **Cmd + Up** (Mac) / **Ctrl + Up** (Win): Move selected template up (Templates tab only)
 - **Cmd + Down** (Mac) / **Ctrl + Down** (Win): Move selected template down (Templates tab only)
+- **Cmd + S** (Mac) / **Ctrl + S** (Win): **Save** README changes (while in Edit Mode)
+- **Cmd + Space** (Mac) / **Ctrl + Space** (Win): **Quick Launch** top template with newest TD version
 
 ---
 
@@ -133,20 +143,65 @@ Enable **"Show Info"** to display an editable README panel alongside the file pi
 ---
 
 ## How to build
-This was built with Python 3.10. Pyinstaller, and the wonderful [DearPyGui](https://github.com/hoffstadt/DearPyGui) for UI amongst other things.
 
-By default, Pyinstaller compiled programs when downloaded directly from the internet as an exe or zipped exe tend to get flagged as false positive viruses, for this one it showed up as Trojan:Win32/Wacatac.B!ml, which is of course nonsense. 
+Built with Python 3.10+, PyInstaller, and [DearPyGui](https://github.com/hoffstadt/DearPyGui) for the UI.
 
-To get around this for those downloading releases, I bundled the executable into a windows installer using inno setup which conveniently compresses the contents into a format chrome, windows etc can't read at download time.
+> **Note:** PyInstaller-compiled executables downloaded directly from the internet tend to get flagged as false positive viruses (e.g. `Trojan:Win32/Wacatac.B!ml`). To avoid this for releases, the executable is bundled into a Windows installer using [Inno Setup](https://jrsoftware.org/isinfo.php), which compresses the contents into a format that bypasses download-time scanning.
 
-If you want to build from this repo, there's a few steps, but they are mostly automated.
+### Windows Build
 
-1) download this repo
-2) unzip the py directory from inside py.zip into the root of the repo. This is a full python install, with Pyinstaller DearPyGui, etc installed.
-3) make your changes to td_launcher.py, the main script.
-4) test td_launcher.py easily by just double clicking td_launcher.bat. (NOTE: when doubleclicking to run, it uses a bundled test.toe as a test file for simplicity.)
-5) when ready to rebuild the single file exe with pyinstaller, run BUILD.bat. This will create the executable in dist\td_launcher.exe.
-6) optionally if you also wish to bundle the exe into an installer, you can open the iss file inno\TD_Launcher_Inno_Compiler.iss, with [inno setup](https://jrsoftware.org/isinfo.php), and build from there. separate installer.exe will show up in the inno\Output\ directory.
+#### Prerequisites
+1. **Python 3.10+** with pip
+2. **TouchDesigner installed** (optional for running, but the bundled `toeexpand.exe` handles version detection)
+
+#### Quick Setup
+```bash
+# 1. Clone the repository
+git clone <repo-url>
+cd TD-Launcher-Mac
+
+# 2. Create and activate a virtual environment
+python -m venv venv
+.\venv\Scripts\activate
+
+# 3. Install dependencies
+pip install -r requirements.txt
+```
+
+#### Running from Source
+```bash
+# Run directly with Python
+python td_launcher.py
+
+# Or run with a test file
+python td_launcher.py test.toe
+
+# Enable debug logging
+set TD_LAUNCHER_DEBUG=1
+python td_launcher.py
+```
+
+#### Build Options
+
+**Build the executable:**
+```bash
+BUILD.bat
+```
+- Creates `dist\td_launcher_plus.exe`
+- Bundles `toeexpand.exe` and dependencies
+- Includes TouchDesigner icon and app icon
+
+**Build the installer (optional):**
+1. Install [Inno Setup](https://jrsoftware.org/isinfo.php)
+2. Open `inno\TD_Launcher_Inno_Compiler.iss` in Inno Setup
+3. Build from there — the installer will appear in `inno\Output\`
+
+#### Legacy Setup (bundled Python)
+
+A bundled Python environment (`py.zip`) is also available for building without a system Python install:
+1. Unzip `py.zip` into the root of the repo
+2. Run `td_launcher.bat` to test
+3. Run `BUILD.bat` to build (it uses `.\py\python.exe` by default)
 
 ### macOS Build
 
@@ -282,9 +337,9 @@ This approach ensures optimal compatibility on each platform while maintaining t
 
 # Contributors
 
-- (Lucas Morgan)[https://www.enviral-design.com/] - original TD Launcher with version picker
-- (Dan Molnar / Function Store)[https://functionstore.xyz/link-in-bio](Cross platform implementation and "Plus" version including recent files, templates, icons, readme, utility
-- (Keith Lostracco)[https://github.com/keithlostracco] - Daily build signature support
+- [Lucas Morgan](https://www.enviral-design.com/) - original TD Launcher with version picker
+- [Dan Molnar / Function Store](https://functionstore.xyz/link-in-bio) - Cross platform implementation and "Plus" version including recent files, templates, icons, readme, utility
+- [Keith Lostracco](https://github.com/keithlostracco) - Daily build signature support
 
 ---
 

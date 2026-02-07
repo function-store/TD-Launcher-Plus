@@ -27,6 +27,7 @@ from utils import (
     load_icon_texture,
     load_default_icon,
     show_clear_confirmation,
+    get_resource_path,
 )
 
 # Version
@@ -96,6 +97,9 @@ class LauncherApp:
         self.readme_modified: bool = False
         self.mono_font = None
         self.readme_wrapped: bool = True
+        self.readme_editing_active: bool = False
+        self.readme_edit_buffer: str = ""
+        self.last_readme_click_time: float = 0
 
         # Version analysis cache (path -> build_info)
         self.version_cache: dict = {}
@@ -153,12 +157,21 @@ class LauncherApp:
 
         # Create viewport
         info_width = 1190 if self.config.show_readme else 630
-        dpg.create_viewport(
+        # Windows title bar eats into viewport height
+        menu_bar_offset = 40 if platform.system() == 'Windows' else 0
+        viewport_kwargs = dict(
             title=f'TD Launcher Plus',
             width=info_width,
-            height=675,
-            resizable=True
+            height=675 + menu_bar_offset,
+            resizable=True,
         )
+        # Set window icon on Windows (macOS uses app bundle icon)
+        if platform.system() == 'Windows':
+            ico_path = get_resource_path("td_launcher_plus.ico")
+            if os.path.exists(ico_path):
+                viewport_kwargs['small_icon'] = ico_path
+                viewport_kwargs['large_icon'] = ico_path
+        dpg.create_viewport(**viewport_kwargs)
         dpg.setup_dearpygui()
         dpg.show_viewport()
         dpg.set_primary_window("Primary Window", True)
@@ -257,15 +270,54 @@ class LauncherApp:
         """Helper to set highlight state and track active tags."""
         if dpg.does_item_exist(tag):
             dpg.set_value(tag, state)
+            
+            # Update active set
             if state:
                 self.active_highlight_tags.add(tag)
             elif tag in self.active_highlight_tags:
                 self.active_highlight_tags.remove(tag)
 
+            # Update theme based on state
+            user_data = dpg.get_item_user_data(tag)
+            if user_data and isinstance(user_data, dict):
+                source = user_data.get('source', 'default')
+                
+                # Determine theme
+                theme_tag = None
+                if state:
+                    # Selected Themes
+                    if source == 'active':
+                        theme_tag = "active_item_theme"
+                    elif source == 'launcher':
+                        theme_tag = "selected_launcher_theme"
+                    elif source == 'td':
+                        theme_tag = "selected_td_theme"
+                    else:
+                        theme_tag = "selected_default_theme"
+                else:
+                    # Normal Themes
+                    if source == 'active':
+                        theme_tag = "active_item_theme"
+                    elif source == 'launcher':
+                        theme_tag = "launcher_item_theme"
+                    elif source == 'td':
+                        theme_tag = "td_item_theme"
+                    else:
+                        theme_tag = "default_item_theme"
+                
+                if theme_tag and dpg.does_item_exist(theme_tag):
+                    dpg.bind_item_theme(tag, theme_tag)
+
     def _build_ui(self):
         """Build the main UI."""
         show_icons = self.config.show_icons
         show_readme = self.config.show_readme
+
+        # Create global click handler registry
+        if dpg.does_item_exist("global_handler_registry"):
+            dpg.delete_item("global_handler_registry")
+        with dpg.handler_registry(tag="global_handler_registry"):
+            dpg.add_mouse_click_handler(callback=self._on_global_mouse_click)
 
         # Create click handler registry
         if dpg.does_item_exist("row_click_handler"):
@@ -290,12 +342,17 @@ class LauncherApp:
                 with dpg.theme(tag="launcher_item_theme"):
                     with dpg.theme_component(dpg.mvAll):
                         dpg.add_theme_color(dpg.mvThemeCol_Text, [200, 255, 200, 255], category=dpg.mvThemeCat_Core)
-
+                        dpg.add_theme_color(dpg.mvThemeCol_HeaderHovered, [80, 80, 80, 100], category=dpg.mvThemeCat_Core)
+                        
             # Vibrant Green for the absolute active session file
+            # When selected/active, hover should match selection color (or simulate it) to not turn gray
             if not dpg.does_item_exist("active_item_theme"):
                 with dpg.theme(tag="active_item_theme"):
                     with dpg.theme_component(dpg.mvAll):
                         dpg.add_theme_color(dpg.mvThemeCol_Text, [50, 255, 50, 255], category=dpg.mvThemeCat_Core)
+                        # Override hover to match ACTIVE header color (default blue-ish or custom?)
+                        # Actually 'Header' default is roughly [66, 150, 250, 103]
+                        dpg.add_theme_color(dpg.mvThemeCol_HeaderHovered, [66, 150, 250, 103], category=dpg.mvThemeCat_Core)
 
             # Create global theme for TD-synced recent items (Yellow)
             if not dpg.does_item_exist("td_item_theme"):
@@ -303,8 +360,40 @@ class LauncherApp:
                     with dpg.theme_component(dpg.mvAll):
                         # Pleasant soft yellow
                         dpg.add_theme_color(dpg.mvThemeCol_Text, [255, 255, 200, 255], category=dpg.mvThemeCat_Core)
+                        dpg.add_theme_color(dpg.mvThemeCol_HeaderHovered, [80, 80, 80, 100], category=dpg.mvThemeCat_Core)
 
-            # Always use same structure - just hide readme elements when not needed
+            # Default theme for standard items (White)
+            if not dpg.does_item_exist("default_item_theme"):
+                with dpg.theme(tag="default_item_theme"):
+                    with dpg.theme_component(dpg.mvAll):
+                        dpg.add_theme_color(dpg.mvThemeCol_HeaderHovered, [80, 80, 80, 100], category=dpg.mvThemeCat_Core)
+
+            # Selected Themes (Prevent Gray Hover)
+            # ------------------------------------
+            # When selected, use default Header blue for active and hover
+            header_blue = [66, 150, 250, 103] # Default approximate blue
+            
+            if not dpg.does_item_exist("selected_launcher_theme"):
+                with dpg.theme(tag="selected_launcher_theme"):
+                    with dpg.theme_component(dpg.mvAll):
+                        dpg.add_theme_color(dpg.mvThemeCol_Text, [200, 255, 200, 255], category=dpg.mvThemeCat_Core)
+                        dpg.add_theme_color(dpg.mvThemeCol_HeaderHovered, header_blue, category=dpg.mvThemeCat_Core)
+
+            if not dpg.does_item_exist("selected_td_theme"):
+                with dpg.theme(tag="selected_td_theme"):
+                    with dpg.theme_component(dpg.mvAll):
+                        dpg.add_theme_color(dpg.mvThemeCol_Text, [255, 255, 200, 255], category=dpg.mvThemeCat_Core)
+                        dpg.add_theme_color(dpg.mvThemeCol_HeaderHovered, header_blue, category=dpg.mvThemeCat_Core)
+
+            if not dpg.does_item_exist("selected_default_theme"):
+                with dpg.theme(tag="selected_default_theme"):
+                    with dpg.theme_component(dpg.mvAll):
+                        # Text color handled by default/parent or override if needed?
+                        # Default white
+                        dpg.add_theme_color(dpg.mvThemeCol_Text, [255, 255, 255, 255], category=dpg.mvThemeCat_Core) 
+                        dpg.add_theme_color(dpg.mvThemeCol_HeaderHovered, header_blue, category=dpg.mvThemeCat_Core)
+
+
             with dpg.group(tag="main_ui_group"):
                 # Tab bar
                 with dpg.tab_bar(tag="file_picker_tabs", callback=self._on_tab_changed):
@@ -344,41 +433,35 @@ class LauncherApp:
                     # Left side - file picker and version panel
                     with dpg.group(tag="left_panel"):
                         # File lists
-                        with dpg.child_window(height=280, width=600 if show_readme else -1, tag="recent_files_list", horizontal_scrollbar=True):
+                        with dpg.child_window(height=240, width=600 if show_readme else -1, tag="recent_files_list", horizontal_scrollbar=True):
                             self._build_recent_files_list()
-                        with dpg.child_window(height=280, width=600 if show_readme else -1, tag="templates_list", horizontal_scrollbar=True, show=False):
+                        with dpg.child_window(height=240, width=600 if show_readme else -1, tag="templates_list", horizontal_scrollbar=True, show=False):
                             self._build_templates_list()
                         self._apply_template_theme()
                         dpg.add_separator()
                         # Version panel
-                        with dpg.child_window(height=220, width=600 if show_readme else -1, tag="version_panel"):
+                        with dpg.child_window(height=260, width=600 if show_readme else -1, tag="version_panel"):
                             pass  # Content will be added by _update_version_panel calls
 
                     # Right side - README panel (only when show_readme)
                     if show_readme:
                         with dpg.child_window(tag="readme_container", width=570, height=510, border=False):
-                            dpg.add_text("Project Info", color=[200, 200, 200, 255])
+                            dpg.add_group(tag="readme_header_group")
                             dpg.add_separator()
                             dpg.add_text("Select a file...", tag="readme_status_text", color=[150, 150, 150, 255])
                             dpg.add_separator()
                             with dpg.child_window(tag="readme_scroll_parent", width=-1, height=390, horizontal_scrollbar=True):
                                 with dpg.group(horizontal=True, tag="readme_content_group"):
-                                    with dpg.group():
-                                        dpg.add_spacer(height=5)
-                                        dpg.add_text("", tag="readme_gutter_text")
-                                    dpg.add_input_text(
-                                        tag="readme_content_text",
-                                        multiline=True,
-                                        width=2000 if not self.readme_wrapped else -1,
-                                        height=400,
-                                        callback=self._on_readme_changed,
-                                        on_enter=False
-                                    )
+                                    pass # Filled by _rebuild_readme_ui_internal
+                            
                             dpg.add_separator()
                             with dpg.group(horizontal=True):
                                 dpg.add_button(label="Save", tag="readme_save_button", callback=self._on_save_readme, show=False)
                                 dpg.add_button(label="View", tag="readme_view_button", callback=self._on_view_readme, show=False)
                                 dpg.add_button(label="Wrap: ON", tag="readme_wrap_toggle", callback=self._on_toggle_readme_wrap, show=False)
+                            
+                            # Initial population
+                            self._rebuild_readme_ui_internal()
 
                 dpg.add_separator()
                 self._build_launch_button()
@@ -394,8 +477,13 @@ class LauncherApp:
                         dpg.add_theme_style(dpg.mvStyleVar_FrameBorderSize, 0)
                         dpg.add_theme_style(dpg.mvStyleVar_FrameRounding, 2)
 
-                dpg.bind_item_theme("readme_container", info_theme)
-                dpg.bind_item_theme("readme_content_text", info_theme)
+                if dpg.does_item_exist("readme_container"):
+                    dpg.bind_item_theme("readme_container", info_theme)
+                if dpg.does_item_exist("readme_content_text"):
+                    dpg.bind_item_theme("readme_content_text", info_theme)
+                if dpg.does_item_exist("readme_content_display"):
+                    # Use the same theme for consistency or define a specific one
+                    dpg.bind_item_theme("readme_content_display", info_theme)
 
         dpg.set_primary_window("Primary Window", True)
 
@@ -431,7 +519,7 @@ class LauncherApp:
                         default_value=show_readme,
                         callback=self._on_toggle_readme
                     )
-                with dpg.child_window(height=280, width=-1, tag="recent_files_list", horizontal_scrollbar=True):
+                with dpg.child_window(height=240, width=-1, tag="recent_files_list", horizontal_scrollbar=True):
                     self._build_recent_files_list()
 
             # Templates Tab
@@ -454,7 +542,7 @@ class LauncherApp:
                         default_value=show_readme,
                         callback=self._on_toggle_readme
                     )
-                with dpg.child_window(height=280, width=-1, tag="templates_list", horizontal_scrollbar=True):
+                with dpg.child_window(height=240, width=-1, tag="templates_list", horizontal_scrollbar=True):
                     self._build_templates_list()
                 self._apply_template_theme()
 
@@ -609,33 +697,66 @@ class LauncherApp:
                         dpg.add_spacer(height=15)
                     with dpg.group(horizontal=True):
                         # Filename (selectable)
-                        # Filename (selectable)
-                        dpg.add_selectable(
-                            label=display_name,
-                            tag=f"recent_file_{i}",
-                            callback=self._on_file_selected,
-                            user_data={'path': file_path, 'type': 'recent'},
-                            width=calculated_width
-                        )
                         
                         # Apply custom text color based on source
                         # Normalize paths for comparison
                         abs_file_path = os.path.abspath(file_path) if file_path else ""
                         abs_active_path = os.path.abspath(self.active_manual_file) if self.active_manual_file else ""
                         
-                        is_active_session = (abs_file_path == abs_active_path)
+                        # Check if this is the currently selected file (for DPG visual state)
+                        is_currently_selected = False
+                        if self.selected_file:
+                            is_currently_selected = (abs_file_path == os.path.abspath(self.selected_file))
                         
-                        if is_active_session:
-                            # Use vibrant theme for active session file
-                            if dpg.does_item_exist("active_item_theme"):
-                                dpg.bind_item_theme(f"recent_file_{i}", "active_item_theme")
+                        # Check if this is the active manual file (for Source coloring - Green)
+                        is_active_session_source = (abs_file_path == abs_active_path)
+
+                        if is_active_session_source:
+                            user_source_type = 'active'
                         elif source == 'launcher':
-                            if dpg.does_item_exist("launcher_item_theme"):
-                                dpg.bind_item_theme(f"recent_file_{i}", "launcher_item_theme")
+                            user_source_type = 'launcher'
                         elif source == 'td':
-                            if dpg.does_item_exist("td_item_theme"):
-                                dpg.bind_item_theme(f"recent_file_{i}", "td_item_theme")
+                            user_source_type = 'td'
+                        else:
+                            user_source_type = 'default'
+
+                        dpg.add_selectable(
+                            label=display_name,
+                            tag=f"recent_file_{i}",
+                            callback=self._on_file_selected,
+                            user_data={'path': file_path, 'type': 'recent', 'source': user_source_type},
+                            width=calculated_width,
+                            default_value=is_currently_selected
+                        )
                         
+                        if is_currently_selected:
+                            self.active_highlight_tags.add(f"recent_file_{i}")
+                            # Bind selected theme (Blue hover)
+                            if user_source_type == 'active':
+                                 # Keep Active Green text but override hover
+                                 dpg.bind_item_theme(f"recent_file_{i}", "active_item_theme") # Active theme already has custom hover to match
+                            elif user_source_type == 'launcher':
+                                 dpg.bind_item_theme(f"recent_file_{i}", "selected_launcher_theme")
+                            elif user_source_type == 'td':
+                                 dpg.bind_item_theme(f"recent_file_{i}", "selected_td_theme")
+                            else:
+                                 dpg.bind_item_theme(f"recent_file_{i}", "selected_default_theme")
+                        else:
+                            # Bind normal theme (Gray hover)
+                            if user_source_type == 'active':
+                                if dpg.does_item_exist("active_item_theme"):
+                                    dpg.bind_item_theme(f"recent_file_{i}", "active_item_theme")
+                            elif user_source_type == 'launcher':
+                                if dpg.does_item_exist("launcher_item_theme"):
+                                    dpg.bind_item_theme(f"recent_file_{i}", "launcher_item_theme")
+                            elif user_source_type == 'td':
+                                if dpg.does_item_exist("td_item_theme"):
+                                    dpg.bind_item_theme(f"recent_file_{i}", "td_item_theme")
+                            else:
+                                # Default theme (gray hover)
+                                if dpg.does_item_exist("default_item_theme"):
+                                    dpg.bind_item_theme(f"recent_file_{i}", "default_item_theme")
+                            
                         summary = get_project_summary(file_path)
                         with dpg.tooltip(dpg.last_item()):
                             dpg.add_text(summary if summary else file_path, wrap=400)
@@ -780,7 +901,7 @@ class LauncherApp:
 
     def _build_version_panel(self):
         """Build the version panel section."""
-        with dpg.child_window(height=220, width=-1, tag="version_panel"):
+        with dpg.child_window(height=260, width=-1, tag="version_panel"):
             dpg.add_text(
                 "Select a file above to see version info",
                 color=[150, 150, 150, 255]
@@ -797,95 +918,148 @@ class LauncherApp:
             enabled=False
         )
 
-    def _build_readme_panel(self):
-        """Build the readme panel."""
-        # Use a secondary child window with a solid background to block leakage from background
-        with dpg.child_window(tag="readme_container", width=540, height=520, border=False):
-            # 1. Title Row - Spacing to align with Tab Bar (height approx 26-28)
-            dpg.add_spacer(height=3)
-            dpg.add_text("Project Info", color=[200, 200, 200, 255])
-            dpg.add_spacer(height=6)
-            dpg.add_separator()
             
-            # 2. Status/Buttons Row - Align with Browse... button row (height approx 30)
-            dpg.add_spacer(height=6)
-            dpg.add_text(
-                "Select a file...",
-                tag="readme_status_text",
-                color=[150, 150, 150, 255],
-            )
-            dpg.add_spacer(height=8)
-            dpg.add_separator()
+
+
+    def _rebuild_readme_ui_internal(self):
+        """Surgically rebuild only the readme panel internal widgets."""
+        if not dpg.does_item_exist("readme_container"):
+            return
+
+        # 1. Rebuild Header
+        if dpg.does_item_exist("readme_header_group"):
+            dpg.delete_item("readme_header_group", children_only=True)
+            with dpg.group(horizontal=True, parent="readme_header_group"):
+                dpg.add_text("Project Info", color=[200, 200, 200, 255])
+                if not self.readme_editing_active:
+                    dpg.add_button(
+                        label="Edit", small=True, 
+                        callback=self._on_readme_text_clicked,
+                        tag="readme_edit_header_btn"
+                    )
+                else:
+                    dpg.add_text("(Editing Mode)", color=[100, 200, 100, 255])
+
+        # 2. Rebuild Content
+        if dpg.does_item_exist("readme_content_group"):
+            dpg.delete_item("readme_content_group", children_only=True)
             
-            # 3. Editor Content - Aligned with the start of the list
-            dpg.add_spacer(height=5)
-            with dpg.child_window(tag="readme_scroll_parent", width=532, height=365, horizontal_scrollbar=True):
-                with dpg.group(horizontal=True, tag="readme_content_group"):
-                    # Gutter - with vertical alignment spacer
-                    with dpg.group():
-                        dpg.add_spacer(height=5) # Align with input_text internal padding
-                        dpg.add_text("", tag="readme_gutter_text", color=[120, 120, 120, 255])
+            gutter = ""
+            display_content = "No README content loaded."
+            
+            if self.current_readme_path and os.path.exists(self.current_readme_path):
+                try:
+                    # For display, we read from disk
+                    with open(self.current_readme_path, 'r', encoding='utf-8') as f:
+                        disk_content = f.read()
                     
-                    # Editor
+                    # Use buffer if editing, otherwise disk content
+                    active_text = self.readme_edit_buffer if self.readme_editing_active else disk_content
+                    
+                    if not self.readme_editing_active and self.readme_wrapped:
+                        vp_width = dpg.get_viewport_width()
+                        dynamic_width = max(30, int((vp_width - 630) / 9))
+                        gutter, display_content = self._wrap_content_with_gutter(active_text, width=dynamic_width)
+                    else:
+                        line_count = active_text.count('\n') + 1
+                        gutter = '\n'.join([f"{i+1:>3} " for i in range(line_count)])
+                        display_content = active_text
+                except Exception as e:
+                    display_content = f"Error reading README: {e}"
+
+            with dpg.group(horizontal=True, parent="readme_content_group"):
+                # Always show gutter (line numbers)
+                dpg.add_text(gutter, tag="readme_gutter_text", color=[100, 100, 100, 255])
+                
+                if not self.readme_editing_active:
+                    # Content display
+                    dpg.add_text(
+                        display_content,
+                        tag="readme_content_display",
+                        wrap=540 if self.readme_wrapped else 0
+                    )
+                else:
+                    # Raw input for editing - use the buffer!
                     dpg.add_input_text(
+                        default_value=self.readme_edit_buffer,
                         tag="readme_content_text",
                         multiline=True,
-                        width=2000 if not self.readme_wrapped else -1, 
-                        height=400, 
+                        width=2000 if not self.readme_wrapped else -1,
+                        height=400,
                         callback=self._on_readme_changed,
                         on_enter=False
                     )
 
-            dpg.add_spacer(height=4)
-            dpg.add_separator()
+        # 3. Handler Registries
+        # 3.1 Edit Mode (Focus loss)
+        if dpg.does_item_exist("readme_edit_handler_registry"):
+            dpg.delete_item("readme_edit_handler_registry")
+        
+        if self.readme_editing_active and dpg.does_item_exist("readme_content_text"):
+            with dpg.item_handler_registry(tag="readme_edit_handler_registry"):
+                dpg.add_item_deactivated_handler(callback=self._on_readme_deactivated)
+            dpg.bind_item_handler_registry("readme_content_text", "readme_edit_handler_registry")
+
+    def _get_readme_display_text(self) -> str:
+        """Get the current readme content for display-only mode."""
+        if not self.current_readme_path or not os.path.exists(self.current_readme_path):
+            return "No README.md found in project root."
+        try:
+            with open(self.current_readme_path, 'r', encoding='utf-8') as f:
+                return f.read()
+        except Exception as e:
+            return f"Error reading README: {e}"
+
+    def _on_global_mouse_click(self, sender, app_data):
+        """Global click detector for double-clicks in the README area."""
+        if app_data != dpg.mvMouseButton_Left:
+            return
             
-            # 4. Footer Buttons
-            with dpg.group(horizontal=True):
-                dpg.add_button(
-                    label="Save",
-                    tag="readme_save_button",
-                    callback=self._on_save_readme,
-                    small=False, # Make them bigger as they are in the footer
-                    show=False
-                )
-                dpg.add_button(
-                    label="View",
-                    tag="readme_view_button",
-                    callback=self._on_view_readme,
-                    small=False,
-                    show=False
-                )
-                dpg.add_button(
-                    label="Wrap: ON",
-                    tag="readme_wrap_toggle",
-                    callback=self._on_toggle_readme_wrap,
-                    small=False,
-                    show=False
-                )
+        # 1. Broadly check if we are in view mode
+        if self.readme_editing_active:
+            return
 
-        # Consolidate Themes
-        with dpg.theme() as info_theme:
-            with dpg.theme_component(dpg.mvChildWindow):
-                # Solid opaque background
-                dpg.add_theme_color(dpg.mvThemeCol_ChildBg, [28, 28, 28, 255])
-                dpg.add_theme_style(dpg.mvStyleVar_ChildRounding, 4)
-            with dpg.theme_component(dpg.mvInputText):
-                # Black IDE background for editor
-                dpg.add_theme_color(dpg.mvThemeCol_FrameBg, [20, 20, 20, 255])
-                dpg.add_theme_style(dpg.mvStyleVar_FrameBorderSize, 0)
-                dpg.add_theme_style(dpg.mvStyleVar_FrameRounding, 2)
+        # 2. Check if the README container is actually being clicked
+        # Note: 'readme_scroll_parent' covers the whole info region
+        if dpg.does_item_exist("readme_scroll_parent") and dpg.is_item_hovered("readme_scroll_parent"):
+            current_time = time.time()
+            time_diff = current_time - self.last_readme_click_time
+            self.last_readme_click_time = current_time
 
-        with dpg.theme() as gutter_theme:
-            with dpg.theme_component(dpg.mvText):
-                dpg.add_theme_color(dpg.mvThemeCol_Text, [110, 110, 110, 255])
+            # Use slightly generous threshold for best feel
+            if 0.01 < time_diff < 0.6:
+                logger.debug(f"README double-click (dt={time_diff:.3f}s)")
+                # Trigger the real edit activation
+                self._on_readme_text_clicked(None, None, None)
+            else:
+                logger.debug(f"README single-click (dt={time_diff:.3f}s)")
 
-        dpg.bind_item_theme("readme_container", info_theme)
-        dpg.bind_item_theme("readme_scroll_parent", info_theme)
-        dpg.bind_item_theme("readme_content_text", info_theme)
-        dpg.bind_item_theme("readme_gutter_text", gutter_theme)
+    def _on_readme_text_clicked(self, sender, app_data, user_data=None):
+        """Switch to edit mode surgically."""
+        if not self.readme_editing_active:
+            self.readme_editing_active = True
+            
+            # Load current file content into buffer for editing
+            self.readme_edit_buffer = ""
+            if self.current_readme_path and os.path.exists(self.current_readme_path):
+                try:
+                    with open(self.current_readme_path, 'r', encoding='utf-8') as f:
+                        self.readme_edit_buffer = f.read()
+                except Exception as e:
+                    logger.error(f"Failed to load README for editing: {e}")
 
-        if self.mono_font:
-            dpg.bind_item_font("readme_content_group", self.mono_font)
+            logger.debug("Switching to README edit mode")
+            self._rebuild_readme_ui_internal() # Surgical rebuild
+            if dpg.does_item_exist("readme_content_text"):
+                dpg.focus_item("readme_content_text")
+
+    def _on_readme_deactivated(self, sender, app_data, user_data=None):
+        """Switch back to display mode surgically."""
+        if self.readme_editing_active:
+            self.readme_editing_active = False
+            logger.debug("Switching to README display mode")
+            self._rebuild_readme_ui_internal() # Surgical rebuild
+
 
     def _update_version_panel(self, skip_analysis: bool = False):
         """Update the version panel with selected file info."""
@@ -937,7 +1111,7 @@ class LauncherApp:
             version_keys = self.td_manager.get_sorted_version_keys()
             if version_keys:
                 # Default taller height (180) when no missing version warning is present
-                with dpg.child_window(height=180, width=-1, parent="version_panel", tag="td_version_container"):
+                with dpg.child_window(height=240, width=-1, parent="version_panel", tag="td_version_container"):
                     dpg.add_radio_button(
                         version_keys,
                         default_value=version_keys[-1],  # Most recent version
@@ -987,12 +1161,29 @@ class LauncherApp:
 
         # Version selection
         version_keys = self.td_manager.get_sorted_version_keys()
-        default_version = self.build_info if self.build_info in version_keys else (
-            version_keys[0] if version_keys else None
-        )
+        
+        default_version = None
+        if version_keys:
+            if self.build_info in version_keys:
+                default_version = self.build_info
+            else:
+                # Match missing - find closest older version
+                target_v = self.td_manager.parse_version_string(self.build_info)
+                # version_keys is sorted ascending (earliest to latest)
+                # Fallback to oldest installed if all are newer
+                default_version = version_keys[0] 
+                
+                for v_key in version_keys:
+                    current_v = self.td_manager.parse_version_string(v_key)
+                    if current_v <= target_v:
+                        default_version = v_key
+                    else:
+                        # version_keys is sorted, so we can stop once we exceed target
+                        break
+
 
         # Dynamic height based on download button presence (Installed: 180, Missing: 100)
-        container_height = 150 if version_installed else 123
+        container_height = 190 if version_installed else 163
         with dpg.child_window(height=container_height, width=-1, parent="version_panel", tag="td_version_container"):
             dpg.add_radio_button(
                 version_keys,
@@ -1013,6 +1204,11 @@ class LauncherApp:
     def _on_version_selected(self, sender, app_data):
         """Handle version radio button selection."""
         self.selection_focus = 'versions'
+        self.readme_editing_active = False # Reclaim focus
+        if dpg.does_item_exist("readme_content_text"):
+            dpg.configure_item("readme_content_text", readonly=True)
+        if dpg.does_item_exist("file_picker_tabs"):
+            dpg.focus_item("file_picker_tabs") # Steal DPG focus back
         # Can add logic here if we want to preview version changes
 
     def _rebuild_version_panel_ui(self):
@@ -1154,11 +1350,8 @@ class LauncherApp:
         return text.replace('\n ', '')
 
     def _update_readme_panel(self):
-        """Update the readme panel with file info."""
+        """Update the readme panel metadata and trigger surgical rebuild."""
         if not self.config.show_readme:
-            return
-
-        if not dpg.does_item_exist("readme_status_text"):
             return
 
         if self.selected_file and os.path.exists(self.selected_file):
@@ -1166,38 +1359,17 @@ class LauncherApp:
             project_dir = os.path.dirname(self.selected_file)
             
             if readme_path:
-                content = read_readme_content(readme_path, max_length=50000)  # Allow more for editing
-                
-                if self.readme_wrapped:
-                    # Calculate dynamic width based on viewport
-                    vp_width = dpg.get_viewport_width()
-                    # Approx 560px for picker side, subtract padding. 
-                    # For a 1190 width, readme gets ~600px. 
-                    # 10px per char approx for mono font. 
-                    dynamic_width = max(30, int((vp_width - 630) / 9))
-                    gutter, display_content = self._wrap_content_with_gutter(content, width=dynamic_width)
-                else:
-                    gutter = '\n'.join([f"{i+1:>3} " for i in range(content.count('\n') + 1)])
-                    display_content = content
-                
-                dpg.set_value("readme_status_text", os.path.basename(readme_path))
-                dpg.configure_item("readme_status_text", color=[100, 255, 100, 255])
-                
-                if dpg.does_item_exist("readme_gutter_text"):
-                    dpg.set_value("readme_gutter_text", gutter)
-                if dpg.does_item_exist("readme_content_text"):
-                    dpg.set_value("readme_content_text", display_content)
-                self._sync_readme_height()
                 self.current_readme_path = readme_path
+                status_text = os.path.basename(readme_path)
+                status_color = [100, 255, 100, 255]
             else:
-                # No readme - allow creating one
-                dpg.set_value("readme_status_text", "README.md (new)")
-                dpg.configure_item("readme_status_text", color=[200, 200, 100, 255])
-                if dpg.does_item_exist("readme_gutter_text"):
-                    dpg.set_value("readme_gutter_text", "  1 ")
-                if dpg.does_item_exist("readme_content_text"):
-                    dpg.set_value("readme_content_text", "")
                 self.current_readme_path = os.path.join(project_dir, "README.md")
+                status_text = "README.md (new)"
+                status_color = [200, 200, 100, 255]
+            
+            if dpg.does_item_exist("readme_status_text"):
+                dpg.set_value("readme_status_text", status_text)
+                dpg.configure_item("readme_status_text", color=status_color)
             
             if dpg.does_item_exist("readme_save_button"):
                 dpg.configure_item("readme_save_button", show=True)
@@ -1205,65 +1377,50 @@ class LauncherApp:
                 dpg.configure_item("readme_view_button", show=True)
             if dpg.does_item_exist("readme_wrap_toggle"):
                 dpg.configure_item("readme_wrap_toggle", show=True)
+            
             self.readme_modified = False
+            # Trigger surgical rebuild to show the content of the new file
+            self._rebuild_readme_ui_internal()
         else:
-            dpg.set_value("readme_status_text", "Select a file...")
-            dpg.configure_item("readme_status_text", color=[150, 150, 150, 255])
-            if dpg.does_item_exist("readme_gutter_text"):
-                dpg.set_value("readme_gutter_text", "")
-            if dpg.does_item_exist("readme_content_text"):
-                dpg.set_value("readme_content_text", "")
-            if dpg.does_item_exist("readme_save_button"):
-                dpg.configure_item("readme_save_button", show=False)
-            if dpg.does_item_exist("readme_view_button"):
-                dpg.configure_item("readme_view_button", show=False)
-            if dpg.does_item_exist("readme_wrap_toggle"):
-                dpg.configure_item("readme_wrap_toggle", show=False)
             self.current_readme_path = None
-            self.readme_modified = False
+            if dpg.does_item_exist("readme_status_text"):
+                dpg.set_value("readme_status_text", "Select a file...")
+                dpg.configure_item("readme_status_text", color=[150, 150, 150, 255])
+            self._rebuild_readme_ui_internal()
 
     def _on_readme_changed(self, sender, app_data):
-        """Handle readme content changes."""
+        """Handle readme content changes and sync to buffer."""
         self.readme_modified = True
+        self.readme_edit_buffer = app_data # DPG passes current string as app_data
         if dpg.does_item_exist("readme_save_button"):
-            dpg.configure_item("readme_save_button", label="Save *")
+            dpg.configure_item("readme_save_button", label="Save*")
         
         # Live refresh line numbers in the gutter
         if dpg.does_item_exist("readme_gutter_text"):
-            lines = app_data.split('\n')
-            gutter_lines = []
-            
-            line_count = 1
-            for line in lines:
-                if line.startswith(" "):
-                    # Lines starting with a space are considered wrapped continuation
-                    gutter_lines.append("    ")
-                else:
-                    # Logical line start
-                    gutter_lines.append(f"{line_count:>3} ")
-                    line_count += 1
-            
+            line_count = app_data.count('\n') + 1
+            gutter_lines = [f"{i+1:>3} " for i in range(line_count)]
             dpg.set_value("readme_gutter_text", '\n'.join(gutter_lines))
 
         self._sync_readme_height()
 
     def _on_save_readme(self, sender, app_data):
-        """Save readme content to file."""
+        """Save readme content to file using the robust buffer."""
         if not self.current_readme_path:
             return
 
-        content = dpg.get_value("readme_content_text")
-        # Ensure we unwrap indicators before saving
-        content = self._unwrap_content(content)
-        
+        # Use the buffer directly instead of reading from a potentially-deleted widget
         try:
             with open(self.current_readme_path, 'w', encoding='utf-8') as f:
-                f.write(content)
+                f.write(self.readme_edit_buffer)
+            
             self.readme_modified = False
+            self.readme_editing_active = False # Back to viewing after save
+            
             dpg.configure_item("readme_save_button", label="Save")
-            # Update status to show it exists now
-            dpg.set_value("readme_status_text", os.path.basename(self.current_readme_path))
-            dpg.configure_item("readme_status_text", color=[100, 255, 100, 255])
+            
+            # Rebuild from the newly written disk file
+            self._rebuild_readme_ui_internal()
+            
             logger.info(f"Saved README to {self.current_readme_path}")
         except Exception as e:
             logger.error(f"Failed to save README: {e}")
@@ -1428,6 +1585,7 @@ class LauncherApp:
 
     def _on_tab_changed(self, sender, app_data):
         """Handle tab bar selection change."""
+        self.readme_editing_active = False # Reclaim focus
         # app_data is usually the ID of the tab in Dear PyGui tab_bar callbacks
         tab_id = app_data
         tab_tag = dpg.get_item_alias(tab_id) if isinstance(tab_id, int) else tab_id
@@ -1495,8 +1653,109 @@ class LauncherApp:
         self._cancel_countdown()
         key_code = app_data
 
-        # Skip navigation shortcuts if typing in readme field
-        if dpg.does_item_exist("readme_content_text") and dpg.is_item_focused("readme_content_text"):
+        # Check for modifier keys (Cmd on macOS, Ctrl on Windows/Linux)
+        modifier_held = (
+            dpg.is_key_down(dpg.mvKey_LControl) or
+            dpg.is_key_down(dpg.mvKey_RControl) or
+            dpg.is_key_down(343) or  # Left Command (macOS)
+            dpg.is_key_down(347)     # Right Command (macOS)
+        )
+
+        # 1. Ctrl+S / Cmd+S - Save README (Bypasses edit block)
+        if modifier_held and key_code == getattr(dpg, 'mvKey_S', -1):
+            if self.readme_editing_active:
+                logger.debug("Shortcut: Saving README via Ctrl+S")
+                self._on_save_readme(None, None)
+                return
+
+        # Skip navigation shortcuts if README is focused AND in editing mode
+        is_readme_focused = dpg.is_item_focused("readme_content_text") if dpg.does_item_exist("readme_content_text") else False
+        
+        # Tab Focus Steering: If we land in README via Tab but NOT in editing mode, bounce out
+        if key_code == getattr(dpg, 'mvKey_Tab', -1) and is_readme_focused and not self.readme_editing_active:
+            if dpg.does_item_exist("file_picker_tabs"):
+                dpg.focus_item("file_picker_tabs")
+            return
+
+        if key_code != getattr(dpg, 'mvKey_Tab', -1):
+            # Only block if we are EXPLICITLY in editing mode
+            if is_readme_focused and self.readme_editing_active:
+                return
+
+        # 2. E Key - Toggle/Edit README
+        shift_held = dpg.is_key_down(dpg.mvKey_LShift) or dpg.is_key_down(dpg.mvKey_RShift)
+        
+        if key_code == getattr(dpg, 'mvKey_E', -1) and not modifier_held:
+            # Shift+E: Start Edit (Show first if hidden)
+            if shift_held:
+                logger.debug("Shortcut: Starting Edit via Shift+E")
+                if not self.config.show_readme:
+                    self._on_toggle_readme(None, True)
+                    if dpg.does_item_exist("show_readme_checkbox"):
+                        dpg.set_value("show_readme_checkbox", True)
+                self._on_readme_text_clicked(None, None)
+                return
+
+            # E (No Shift): Toggle On/Off
+            new_state = not self.config.show_readme
+            logger.debug(f"Shortcut: Toggling README to {new_state} via E")
+            self._on_toggle_readme(None, new_state)
+            if dpg.does_item_exist("show_readme_checkbox"):
+                dpg.set_value("show_readme_checkbox", new_state)
+            return
+
+        # 3. C Key - Toggle Icons
+        if key_code == getattr(dpg, 'mvKey_C', -1) and not modifier_held:
+            new_state = not self.config.show_icons
+            logger.debug(f"Shortcut: Toggling Icons to {new_state} via C")
+            self._on_toggle_icons(None, new_state)
+            return
+
+        # 4. H Key - Toggle Full History
+        if key_code == getattr(dpg, 'mvKey_H', -1) and not modifier_held:
+            new_state = not self.config.show_full_history
+            logger.debug(f"Shortcut: Toggling Full History to {new_state} via H")
+            if dpg.does_item_exist("show_full_history_checkbox"):
+                dpg.set_value("show_full_history_checkbox", new_state)
+            self._on_toggle_full_history(None, new_state, None)
+            return
+            
+        # 5. Ctrl+Space / Cmd+Space - Quick Launch Top Template
+        # GLFW key code for Space is 32. 
+        if modifier_held and (key_code == 32 or key_code == 524 or key_code == getattr(dpg, 'mvKey_Space', -1)):
+            templates = self.config.get_templates()
+            if templates:
+                top_template = templates[0]
+                file_path = top_template if isinstance(top_template, str) else top_template.get('path', '')
+                
+                # Get newest version
+                version_keys = self.td_manager.get_sorted_version_keys()
+                if version_keys:
+                    newest_version = version_keys[-1]
+                    logger.debug(f"Shortcut: Quick-launching top template {file_path} with {newest_version}")
+                    self._launch_project(file_path, newest_version, promote=False)
+                else:
+                    logger.warning("Quick Launch failed: No TouchDesigner versions discovered.")
+            else:
+                logger.warning("Quick Launch failed: No templates found.")
+            return
+
+        # Space - toggle focus between picker and versions
+        # Standard ascii space is 32. DPG on Windows sometimes uses 524.
+        if (key_code == 32 or key_code == 524 or key_code == getattr(dpg, 'mvKey_Space', -1)) and not modifier_held:
+            if self.selection_focus == 'picker':
+                if dpg.does_item_exist("td_version"):
+                    self.selection_focus = 'versions'
+                    # Visual feedback: Dim picker, highlight versions
+                    self._clear_all_selections()
+                    
+                    # Highlight version selection
+                    self._move_version_selection(0)
+            else:
+                self.selection_focus = 'picker'
+                self.readme_editing_active = False # Reclaim focus on space toggle
+                # Visual feedback: Restore picker selection
+                self._move_picker_selection(0)
             return
             
         # Determing if we should move versions or file picker
@@ -1505,16 +1764,10 @@ class LauncherApp:
         # Tab - switch tabs
         if key_code == getattr(dpg, 'mvKey_Tab', None):
             self._switch_picker_tab()
+            # Force focus back to tab bar so it never lands in textbox
+            if dpg.does_item_exist("file_picker_tabs"):
+                dpg.focus_item("file_picker_tabs")
             return
-
-        # Check for modifier keys (Cmd on macOS, Ctrl on Windows/Linux)
-        # GLFW key codes: Left Super=343, Right Super=347 (Command key on macOS)
-        modifier_held = (
-            dpg.is_key_down(dpg.mvKey_LControl) or
-            dpg.is_key_down(dpg.mvKey_RControl) or
-            dpg.is_key_down(343) or  # Left Command (macOS)
-            dpg.is_key_down(347)     # Right Command (macOS)
-        )
 
         # Up/W - move selection up (or reorder template with modifier)
         if key_code in (getattr(dpg, 'mvKey_Up', None), getattr(dpg, 'mvKey_W', None)):
@@ -1599,6 +1852,12 @@ class LauncherApp:
             file_path = items[idx] if isinstance(items[idx], str) else items[idx].get('path', '')
             if not file_path:
                 return
+
+            self.readme_editing_active = False # Reclaim focus
+            if dpg.does_item_exist("readme_content_text"):
+                dpg.configure_item("readme_content_text", readonly=True)
+            if dpg.does_item_exist("file_picker_tabs"):
+                dpg.focus_item("file_picker_tabs") # Steal DPG focus back
 
             selectable_tag = f"{selectable_prefix}{idx}"
             self._on_file_selected(
@@ -1694,7 +1953,11 @@ class LauncherApp:
         if file_paths:
             for file_path in file_paths:
                 self.config.add_template(file_path)
-            self._build_templates_list()
+            
+            # Select the last added template
+            last_added = file_paths[-1]
+            self._rebuild_templates_with_selection(last_added)
+            self._update_version_panel()
 
     def _on_remove_recent(self, sender, app_data, user_data):
         """Handle remove recent file button click."""
@@ -1773,6 +2036,9 @@ class LauncherApp:
             dpg.set_viewport_width(630)
 
         self._build_ui()
+        self.readme_editing_active = False # Reset focus state on rebuild
+        if dpg.does_item_exist("file_picker_tabs"):
+            dpg.focus_item("file_picker_tabs") # Force DPG focus away from text fields
 
         # Restore state without re-analyzing
         self.selected_file = saved_file
@@ -1796,38 +2062,43 @@ class LauncherApp:
         # Restore visual selection highlight (instant=True skips deferred analysis)
         self._restore_selection_highlight()
 
-    def _on_launch(self, sender, app_data, promote=True):
-        """Handle launch button click."""
-        if not self.selected_file:
-            return
-
+    def _launch_project(self, file_path, version, promote=True):
+        """Core logic to launch a TD project with a specific version."""
         if promote:
-            self.config.add_recent_file(self.selected_file)
-            self.active_manual_file = self.selected_file  # Set as session active
+            self.config.add_recent_file(file_path)
+            self.active_manual_file = file_path  # Set as session active
             self._build_recent_files_list()
 
-        # Get selected version
-        version = dpg.get_value("td_version") if dpg.does_item_exist("td_version") else self.build_info
         executable = self.td_manager.get_executable(version)
-
         if not executable:
             logger.error(f"Could not find executable for version {version}")
             return
 
-        logger.info(f"Launching {self.selected_file} with {version}")
+        logger.info(f"Launching {file_path} with {version}")
 
         try:
             if platform.system() == 'Darwin':
                 app_path = self.td_manager.get_app_path(version)
                 if app_path:
-                    subprocess.Popen(['open', '-a', app_path, self.selected_file])
+                    subprocess.Popen(['open', '-a', app_path, file_path])
                 else:
-                    subprocess.Popen([executable, self.selected_file])
+                    subprocess.Popen([executable, file_path])
             else:
-                subprocess.Popen([executable, self.selected_file])
+                subprocess.Popen([executable, file_path])
+            
+            # Close launcher after successful launch command
             dpg.stop_dearpygui()
         except Exception as e:
             logger.error(f"Failed to launch: {e}")
+
+    def _on_launch(self, sender, app_data, promote=True):
+        """Handle launch button click."""
+        if not self.selected_file:
+            return
+
+        # Get selected version
+        version = dpg.get_value("td_version") if dpg.does_item_exist("td_version") else self.build_info
+        self._launch_project(self.selected_file, version, promote=promote)
 
     def _on_download(self, sender, app_data):
         """Handle download button click."""
@@ -1905,7 +2176,7 @@ class LauncherApp:
             with dpg.group(horizontal=True):
                 dpg.add_text("Author:")
                 dpg.add_text("Dan Molnar", color=[200, 255, 200, 255])
-                dpg.add_text("(FunctionStore)", color=[150, 150, 150, 255])
+                dpg.add_text("(Function Store)", color=[150, 150, 150, 255])
 
             with dpg.group(horizontal=True):
                 dpg.add_text("Original Author:")
@@ -1940,9 +2211,11 @@ class LauncherApp:
     def _clear_all_selections(self):
         """Clear all active selections efficiently."""
         # Use set to clear only what is active instead of scanning all rows
+        # We must use list() copy because _set_row_highlight removes from the set
         for tag in list(self.active_highlight_tags):
-            if dpg.does_item_exist(tag):
-                dpg.set_value(tag, False)
+            self._set_row_highlight(tag, False)
+        
+        # Set should be empty now, but clear just in case
         self.active_highlight_tags.clear()
 
     def _confirm_and_remove(self, file_path: str, list_type: str = None):
@@ -2165,7 +2438,7 @@ class LauncherApp:
         except ValueError:
             current_idx = 0
             
-        new_idx = (current_idx + step) % len(version_keys)
+        new_idx = max(0, min(current_idx + step, len(version_keys) - 1))
         dpg.set_value("td_version", version_keys[new_idx])
         
         # Scroll to selection

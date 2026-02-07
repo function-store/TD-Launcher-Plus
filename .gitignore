@@ -14,3 +14,5 @@ Backup/
 icon.png
 icon_temp.png
 typings/
+venv/
+__pycache__/

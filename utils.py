@@ -340,7 +340,7 @@ def load_default_icon(size: int = 50) -> Optional[str]:
     try:
         # Try to load app icon
         icon_candidates = [
-            get_resource_path("td_launcher_plus.icns"),
+            get_resource_path("touchdesigner.png"),
             get_resource_path("td_launcher_plus.ico"),
         ]
 

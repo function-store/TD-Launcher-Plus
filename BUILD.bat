@@ -9,6 +9,11 @@ set PYTHON_EXECUTABLE=.\py\python.exe
 --windowed ^
 --name="td_launcher_plus" ^
 --icon="td_launcher_plus.ico" ^
+--add-data="td_launcher_plus.ico;." ^
+--add-data="touchdesigner.png;." ^
+--hidden-import="PIL" ^
+--hidden-import="PIL.Image" ^
+--hidden-import="PIL.ImageOps" ^
 --add-binary="toeexpand/toeexpand.exe;toeexpand" ^
 --add-binary="test.toe;." ^
 --add-binary="toeexpand/iconv.dll;toeexpand" ^
