@@ -1815,9 +1815,13 @@ class LauncherApp:
                 self._on_toggle_readme(None, True)
                 if dpg.does_item_exist("show_readme_checkbox"):
                     dpg.set_value("show_readme_checkbox", True)
+                # After toggle, need to update readme panel to set current_readme_path
+                self._update_readme_panel()
+            
             # Enter edit mode (toggle resets this, so call it after)
             self.readme_editing_active = True
-            # Load content for editing
+            
+            # Load content for editing - use the path that _update_readme_panel found
             self.readme_edit_buffer = ""
             if self.current_readme_path and os.path.exists(self.current_readme_path):
                 try:
@@ -1825,10 +1829,12 @@ class LauncherApp:
                         self.readme_edit_buffer = f.read()
                 except Exception:
                     pass
+            
             self._rebuild_readme_ui_internal()
-            # Focus the editor - use split_frame if UI was just built to let it render first
-            if was_hidden:
-                dpg.split_frame()  # Let DPG render the new UI first
+            
+            # Focus the editor - use split_frame to let UI render first
+            # Mac needs this even when not hidden; Windows too for consistency
+            dpg.split_frame()
             if dpg.does_item_exist("readme_content_text"):
                 dpg.focus_item("readme_content_text")
             return
