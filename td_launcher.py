@@ -522,19 +522,19 @@ class LauncherApp:
                     # Left side - file picker and version panel
                     with dpg.group(tag="left_panel"):
                         # File lists
-                        with dpg.child_window(height=240, width=600 if show_readme else -1, tag="recent_files_list", horizontal_scrollbar=True):
+                        with dpg.child_window(height=240, width=585 if show_readme else -1, tag="recent_files_list", horizontal_scrollbar=True):
                             self._build_recent_files_list()
-                        with dpg.child_window(height=240, width=600 if show_readme else -1, tag="templates_list", horizontal_scrollbar=True, show=False):
+                        with dpg.child_window(height=240, width=585 if show_readme else -1, tag="templates_list", horizontal_scrollbar=True, show=False):
                             self._build_templates_list()
                         self._apply_template_theme()
                         dpg.add_separator()
                         # Version panel
-                        with dpg.child_window(height=260, width=600 if show_readme else -1, tag="version_panel"):
+                        with dpg.child_window(height=260, width=585 if show_readme else -1, tag="version_panel"):
                             pass  # Content will be added by _update_version_panel calls
 
                     # Right side - README panel (only when show_readme)
                     if show_readme:
-                        with dpg.child_window(tag="readme_container", width=570, height=510, border=False):
+                        with dpg.child_window(tag="readme_container", width=580, height=507, border=False):
                             dpg.add_group(tag="readme_header_group")
                             dpg.add_separator()
                             dpg.add_text("Select a file...", tag="readme_status_text", color=[150, 150, 150, 255])
