@@ -32,7 +32,7 @@ from utils import (
 )
 
 # Version
-APP_VERSION = "2.0.0"
+APP_VERSION = "2.0.1"
 
 # Setup logging
 DEBUG_MODE = os.environ.get('DEBUG', '').lower() in ('1', 'true', 'yes')
@@ -388,6 +388,16 @@ class LauncherApp:
         with dpg.item_handler_registry(tag="row_click_handler"):
             dpg.add_item_clicked_handler(callback=self._on_row_clicked)
 
+        if dpg.does_item_exist("author_fs_handler_registry"):
+            dpg.delete_item("author_fs_handler_registry")
+        with dpg.item_handler_registry(tag="author_fs_handler_registry"):
+            dpg.add_item_clicked_handler(callback=self._on_visit_author_fs)
+
+        if dpg.does_item_exist("author_enviral_handler_registry"):
+            dpg.delete_item("author_enviral_handler_registry")
+        with dpg.item_handler_registry(tag="author_enviral_handler_registry"):
+            dpg.add_item_clicked_handler(callback=self._on_visit_author_enviral)
+
         with dpg.window(tag="Primary Window", no_scrollbar=True, no_move=True):
             # Header Row with Top-Right Info button
             with dpg.table(header_row=False, policy=dpg.mvTable_SizingFixedFit, width=-1):
@@ -396,14 +406,18 @@ class LauncherApp:
                 
                 with dpg.table_row():
                     with dpg.group(horizontal=True):
-                        dpg.add_text(f'TD Launcher Plus v{APP_VERSION}', color=[50, 255, 0, 255], tag="header_title")
+                        dpg.add_text(f'TD Launcher Plus', color=[50, 255, 0, 255], tag="header_title")
                         with dpg.group():
                             dpg.add_spacer(height=0)
                             dpg.add_text('by Function Store', color=[100, 100, 100, 255], tag="header_caption")
+                            with dpg.tooltip("header_caption"):
+                                dpg.add_text("Visit functionstore.xyz")
                     
                     # Bind smaller mono font to caption only
                     if hasattr(self, 'caption_font') and self.caption_font:
                         dpg.bind_item_font("header_caption", self.caption_font)
+                    
+                    dpg.bind_item_handler_registry("header_caption", "author_fs_handler_registry")
                         
                     dpg.add_button(label="Info", callback=self._show_about_modal, small=True)
             
@@ -499,15 +513,6 @@ class LauncherApp:
                     with dpg.table_row():
                         with dpg.group(horizontal=True):
                             dpg.add_button(label="Browse...", tag="browse_btn_recent", callback=self._on_browse)
-                            
-                            dpg.add_checkbox(
-                                label="Full History", 
-                                tag="show_full_history_checkbox", 
-                                default_value=self.config.show_full_history, 
-                                callback=self._on_toggle_full_history
-                            )
-                            with dpg.tooltip("show_full_history_checkbox"):
-                                dpg.add_text("Show merged history including TD app recent files extracted by TDLauncherPlusUtility.tox when included in a project (Yellow).\nUncheck to see only manually opened files (Green).")
                             
                             dpg.add_checkbox(label="Show Icons", tag="show_icons_checkbox", default_value=show_icons, callback=self._on_toggle_icons)
                             dpg.add_checkbox(label="Show Info", tag="show_readme_checkbox", default_value=show_readme, callback=self._on_toggle_readme)
@@ -1883,15 +1888,6 @@ class LauncherApp:
             self._on_toggle_icons(None, new_state)
             return
 
-        # 4. H Key - Toggle Full History
-        if key_code == getattr(dpg, 'mvKey_H', -1) and not modifier_held:
-            new_state = not self.config.show_full_history
-            logger.debug(f"Shortcut: Toggling Full History to {new_state} via H")
-            if dpg.does_item_exist("show_full_history_checkbox"):
-                dpg.set_value("show_full_history_checkbox", new_state)
-            self._on_toggle_full_history(None, new_state, None)
-            return
-            
         # 5. Ctrl+D / Cmd+D - Quick Launch Top Template (D for Default)
         if modifier_held and key_code == getattr(dpg, 'mvKey_D', -1):
             templates = self.config.get_templates()
@@ -2517,12 +2513,18 @@ class LauncherApp:
             with dpg.group(horizontal=True):
                 dpg.add_text("Author:")
                 dpg.add_text("Dan Molnar", color=[200, 255, 200, 255])
-                dpg.add_text("(Function Store)", color=[150, 150, 150, 255])
+                dpg.add_text("(Function Store)", color=[150, 150, 200, 255], tag="about_fs_link")
+                dpg.bind_item_handler_registry("about_fs_link", "author_fs_handler_registry")
+                with dpg.tooltip("about_fs_link"):
+                    dpg.add_text("Visit functionstore.xyz")
 
             with dpg.group(horizontal=True):
                 dpg.add_text("Original Author:")
                 dpg.add_text("Lucas Morgan", color=[200, 255, 200, 255])
-                dpg.add_text("(EnviralDesign)", color=[150, 150, 150, 255])
+                dpg.add_text("(EnviralDesign)", color=[150, 150, 200, 255], tag="about_enviral_link")
+                dpg.bind_item_handler_registry("about_enviral_link", "author_enviral_handler_registry")
+                with dpg.tooltip("about_enviral_link"):
+                    dpg.add_text("Visit enviral-design.com")
 
             dpg.add_spacer(height=10)
             with dpg.table(header_row=False, width=-1):
@@ -2544,6 +2546,14 @@ class LauncherApp:
     def _on_check_updates(self):
         """Open the latest releases page on GitHub."""
         webbrowser.open("https://github.com/function-store/TD-Launcher-Plus/releases/latest")
+
+    def _on_visit_author_fs(self, sender, app_data):
+        """Open the Function Store website."""
+        webbrowser.open("https://functionstore.xyz/link-in-bio")
+
+    def _on_visit_author_enviral(self, sender, app_data):
+        """Open the EnviralDesign website."""
+        webbrowser.open("https://enviral-design.com")
 
     # =========================================================================
     # Helper Methods

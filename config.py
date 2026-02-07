@@ -15,6 +15,7 @@ DEFAULT_CONFIG = {
     'confirm_remove_from_list': True,
     'show_icons': False,
     'show_readme': False,
+    'show_full_history': True,
 }
 
 
