@@ -2,17 +2,17 @@
 @echo off
 setlocal
 
-set PYTHON_EXECUTABLE=.\py\python.exe
+set PYTHON_EXECUTABLE=.\venv\Scripts\python.exe
 
 echo Cleaning previous build...
-if exist "dist\td_launcher_plus.exe" del /f "dist\td_launcher_plus.exe"
+if exist "dist\td_launcher_plus" rmdir /s /q "dist\td_launcher_plus"
 if exist "build\td_launcher_plus" rmdir /s /q "build\td_launcher_plus"
 
 echo Installing dependencies...
 %PYTHON_EXECUTABLE% -m pip install -r requirements.txt
 
-%PYTHON_EXECUTABLE% .\py\Scripts\pyinstaller.exe --noconfirm --log-level=WARN ^
---onefile --nowindow ^
+%PYTHON_EXECUTABLE% -m PyInstaller --noconfirm --log-level=WARN ^
+--onedir ^
 --windowed ^
 --name="td_launcher_plus" ^
 --icon="td_launcher_plus.ico" ^

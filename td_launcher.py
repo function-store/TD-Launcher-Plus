@@ -32,7 +32,7 @@ from utils import (
 )
 
 # Version
-APP_VERSION = "2.0.2"
+APP_VERSION = "2.0.3"
 
 # Sentinel for the "Default" template entry (launch TD without a file)
 DEFAULT_TEMPLATE = "__default__"
@@ -2052,12 +2052,21 @@ class LauncherApp:
                 self._move_picker_selection(1)
             return
 
-        # Enter - launch
-        if key_code in (
-            getattr(dpg, 'mvKey_Enter', None),
+        # Enter - launch (use Windows API fallback for packaged builds)
+        _enter_codes = (
             getattr(dpg, 'mvKey_Return', None),
-            getattr(dpg, 'mvKey_KeyPadEnter', None),
-        ):
+            getattr(dpg, 'mvKey_NumPadEnter', None),
+            257,  # GLFW_KEY_ENTER
+            335,  # GLFW_KEY_KP_ENTER
+        )
+        enter_pressed = key_code in _enter_codes
+        if not enter_pressed and platform.system() == 'Windows':
+            try:
+                # VK_RETURN = 0x0D covers both Enter and NumPad Enter
+                enter_pressed = bool(ctypes.windll.user32.GetAsyncKeyState(0x0D) & 0x8000)
+            except Exception:
+                pass
+        if enter_pressed:
             if self.selected_file:
                 self._on_launch(sender, app_data)
             return
