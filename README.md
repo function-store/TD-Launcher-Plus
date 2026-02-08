@@ -12,9 +12,11 @@ This repo is based on [TD Launcher by EnviralDesign](https://github.com/envirald
 - **Project Dashboard**: Quick-access hubs for **Recent Files** and **Templates** with persistent memory.
 - **Integrated Documentation**: View and edit project `README.md` files directly within the launcher.
 - **Visual Previews**: Automatic thumbnail generation and custom icon support for a rich browsing experience.
+- **Search & Filter**: Quickly find projects by typing in the search bar — filters both Recent Files and Templates in real time.
 - **Keyboard Navigation**: Full keyboard navigation with tab memory for fast and fluid workflow.
 - **Native Experience**: Fully optimized for macOS (Apple Silicon/Intel) and Windows with a clean, responsive Dear PyGui interface.
 - **TouchPlayer Support**: Launch projects in TouchPlayer instead of TouchDesigner with a single toggle.
+- **Missing File Detection**: Files that no longer exist on disk are grayed out and labeled "(missing)" — with a one-click cleanup in Settings.
 - **In-App Help**: Built-in help modal (**Help** button) with keyboard shortcut reference and utility TOX info.
 - **Native Recent Files**: Automatically reads your TouchDesigner recent files from the OS (Windows Registry / macOS Shared File List) — no setup needed.
 - **Icon Utility**: Optional companion component for TouchDesigner to auto-generate project thumbnails.
@@ -89,6 +91,12 @@ TD Launcher Plus already reads your recent files directly from the OS (see [Rece
 - **Space**: Toggle focus between **File List** (Blue) and **Version List** (Green)
 - **Esc**: Quit application
 
+**Search**
+- **Cmd + F** (Mac) / **Ctrl + F** (Win): Open **Search** — type to filter the file list in real time
+- **Esc** (while searching): Clear search and close
+- **Enter** (while searching): Close search (filter stays active)
+- **Up / Down** (while searching): Navigate the filtered list without leaving the search field
+
 **Interface Toggles**
 - **C**: Toggle **"Show Icons"**
 - **E**: Toggle **"Show Info"** (README) panel
@@ -116,7 +124,7 @@ TD Launcher Plus analyzes each `.toe` file to determine which TouchDesigner vers
 - **Missing version handling:** If the required version isn't installed, TD Launcher Plus shows a download link and lets you choose an alternative version
 
 ### Recent Files
-TD Launcher Plus keeps track of recently opened projects. Files are added to the Recent Files list only when actually launched (via button, double-click, countdown, or Enter) — not when simply browsing. Browsed files still appear in the UI for the current session.
+TD Launcher Plus keeps track of recently opened projects. Files are added to the Recent Files list only when actually launched (via button, double-click, countdown, or Enter) — not when simply browsing. Browsed files still appear in the UI for the current session. You can also click **"Browse..."** to open a file picker and add a `.toe` file directly.
 
 **Native Recent Files Discovery:** TD Launcher Plus automatically reads TouchDesigner's native recent files directly from the OS — no companion utility needed:
 - **Windows:** Reads from the Windows Registry (`HKCU\Software\Derivative\recent files`)
@@ -147,6 +155,9 @@ Save frequently-used project templates for quick access. Templates appear in a s
 - Remove templates with the **X** button
 - Templates persist between sessions
 
+### Search & Filter
+Quickly find projects across both Recent Files and Templates using the built-in search. Click the **"Search..."** button or press **Ctrl+F** (Cmd+F on Mac) to open the search field. Results filter in real time as you type, matching against file names and paths. Supports wildcard patterns: `*` matches any characters and `?` matches a single character (e.g., `vj*live` or `project?.toe`). Press **Escape** to clear the search, or **Enter** to close the search field while keeping the filter active. Use **Up/Down** arrows to navigate the filtered list without leaving the search field.
+
 ### Project Icons
 TD Launcher Plus can display project icons next to each file. Enable with the **"Show Icons"** checkbox. Icons are automatically generated when you save a project in TouchDesigner using the `TDLauncherPlusUtility.tox` component.
 
@@ -162,8 +173,18 @@ Enable **"Show Info"** to display an editable README panel alongside the file pi
 
 - If a `README.md` exists in the project folder, it's loaded for viewing and editing
 - If no README exists, you can create one by typing and clicking **Save**
+- **Double-click** the README text to enter edit mode instantly
 - Changes are indicated with an asterisk (*) on the Save button
 - Click **View** to open the README rendered as HTML in your default browser
+
+### Missing File Detection
+Files that no longer exist on disk are automatically detected and displayed in gray with a "(missing)" label. Missing files are skipped during keyboard navigation so you can quickly browse only files that exist. Use **Settings > Clear Missing Files** to remove all missing entries at once.
+
+### Settings
+Click the **Settings** button to access preferences:
+
+- **Max Recent Files**: Configure how many recent files to keep (5–200, default 33)
+- **Clear Missing Files**: Remove all entries whose files no longer exist on disk — cleans Recent Files, Templates, and Windows Registry entries in one click
 
 ---
 

@@ -285,7 +285,7 @@ class Config:
         recent_files.insert(0, entry)
 
         # Limit size
-        max_recent = self._config.get('max_recent_files', 20)
+        max_recent = self._config.get('max_recent_files', 33)
         self._config['launcher_recents'] = recent_files[:max_recent]
         self.save()
 
@@ -323,6 +323,45 @@ class Config:
         self._config['launcher_recents'] = []
         self._config['td_recents'] = []
         self.save()
+
+    def clear_missing_files(self) -> int:
+        """Remove entries whose files no longer exist on disk.
+
+        Cleans launcher_recents, td_recents (config-based), templates,
+        and blanks matching Windows registry entries.
+        Does NOT touch macOS .sfl4 td-recents (read-only).
+        Returns the number of entries removed.
+        """
+        removed = 0
+
+        # Launcher recents
+        launcher = self._config.get('launcher_recents', [])
+        cleaned = [rf for rf in launcher if os.path.exists(self._get_path_from_entry(rf))]
+        removed += len(launcher) - len(cleaned)
+        self._config['launcher_recents'] = cleaned
+
+        # Config-based td_recents (legacy / non-native)
+        td = self._config.get('td_recents', [])
+        cleaned_td = [rf for rf in td if os.path.exists(self._get_path_from_entry(rf))]
+        removed += len(td) - len(cleaned_td)
+        self._config['td_recents'] = cleaned_td
+
+        # On Windows, blank missing registry entries too
+        if platform.system() == 'Windows':
+            for entry in self._read_windows_td_recents():
+                path = entry.get('path', '')
+                if path and not os.path.exists(path):
+                    self._blank_windows_td_recent(path)
+                    removed += 1
+
+        # Templates
+        templates = self._config.get('templates', [])
+        cleaned_t = [t for t in templates if os.path.exists(self._get_path_from_entry(t))]
+        removed += len(templates) - len(cleaned_t)
+        self._config['templates'] = cleaned_t
+
+        self.save()
+        return removed
 
     def get_recent_files(self, merged: bool = True) -> list:
         """Get processed recent files list.

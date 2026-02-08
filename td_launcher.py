@@ -32,7 +32,7 @@ from utils import (
 )
 
 # Version
-APP_VERSION = "2.0.5"
+APP_VERSION = "2.1.0"
 
 # Sentinel for the "Default" template entry (launch TD without a file)
 DEFAULT_TEMPLATE = "__default__"
@@ -75,6 +75,10 @@ class LauncherApp:
         # Visible file lists (populated by _build_recent_files_list and _build_templates_list)
         self.visible_recent_files: list = []
         self.visible_templates: list = []
+        self.search_filter: str = ""
+        self.search_input_active: bool = False
+        self.missing_recent_indices: set = set()
+        self.missing_template_indices: set = set()
 
         self.mono_font = None
         self.active_highlight_tags = set()
@@ -104,7 +108,6 @@ class LauncherApp:
         self.current_readme_path: Optional[str] = None
         self.readme_modified: bool = False
         self.mono_font = None
-        self.readme_wrapped: bool = True
         self.readme_editing_active: bool = False
         self.readme_edit_buffer: str = ""
         self.last_readme_click_time: float = 0
@@ -446,6 +449,8 @@ class LauncherApp:
                         
                     with dpg.group(horizontal=True):
                         dpg.add_button(
+                            label="Settings", callback=self._show_settings_modal, small=True)
+                        dpg.add_button(
                             label="Help", callback=self._show_help_modal, small=True)
                         dpg.add_button(label="About", callback=self._show_about_modal, small=True)
             
@@ -489,6 +494,15 @@ class LauncherApp:
                 with dpg.theme(tag="default_item_theme"):
                     with dpg.theme_component(dpg.mvAll):
                         dpg.add_theme_color(dpg.mvThemeCol_HeaderHovered, [80, 80, 80, 100], category=dpg.mvThemeCat_Core)
+
+            # Missing/unavailable file theme (grayed out, no hover)
+            if not dpg.does_item_exist("missing_item_theme"):
+                with dpg.theme(tag="missing_item_theme"):
+                    with dpg.theme_component(dpg.mvAll):
+                        dpg.add_theme_color(dpg.mvThemeCol_Text, [100, 100, 100, 180], category=dpg.mvThemeCat_Core)
+                        dpg.add_theme_color(dpg.mvThemeCol_Header, [0, 0, 0, 0], category=dpg.mvThemeCat_Core)
+                        dpg.add_theme_color(dpg.mvThemeCol_HeaderHovered, [0, 0, 0, 0], category=dpg.mvThemeCat_Core)
+                        dpg.add_theme_color(dpg.mvThemeCol_HeaderActive, [0, 0, 0, 0], category=dpg.mvThemeCat_Core)
 
             # Selected Themes (Prevent Gray Hover)
             # ------------------------------------
@@ -543,17 +557,46 @@ class LauncherApp:
                 with dpg.table(header_row=False, policy=dpg.mvTable_SizingFixedFit, width=-1):
                     dpg.add_table_column(width_stretch=True) # Controls
                     dpg.add_table_column(width_fixed=True)   # Clear button
-                    
+
                     with dpg.table_row():
                         with dpg.group(horizontal=True):
+                            # Search placeholder button (visible when not actively searching)
+                            dpg.add_button(
+                                label="Search...",
+                                tag="search_placeholder_btn",
+                                callback=self._activate_search_input,
+                                width=150,
+                                small=True,
+                            )
+                            # Actual search input (hidden until activated by click or Ctrl+F)
+                            dpg.add_input_text(
+                                tag="search_filter_input",
+                                hint="Search...",
+                                width=150,
+                                callback=self._on_search_filter_changed,
+                                on_enter=False,
+                                show=False,
+                            )
+                            # Dedicated handler to defocus on Enter/click-away
+                            if dpg.does_item_exist("search_input_handler"):
+                                dpg.delete_item("search_input_handler")
+                            with dpg.item_handler_registry(tag="search_input_handler"):
+                                dpg.add_item_deactivated_after_edit_handler(callback=self._on_search_deactivated)
+                            dpg.bind_item_handler_registry("search_filter_input", "search_input_handler")
+                            dpg.add_button(
+                                label="X",
+                                tag="search_clear_btn",
+                                callback=self._on_search_clear,
+                                small=True,
+                                show=False,
+                            )
                             dpg.add_button(label="Browse...", tag="browse_btn_recent", callback=self._on_browse)
-                            
                             dpg.add_checkbox(label="Show Icons", tag="show_icons_checkbox", default_value=show_icons, callback=self._on_toggle_icons)
                             dpg.add_checkbox(label="Show Info", tag="show_readme_checkbox", default_value=show_readme, callback=self._on_toggle_readme)
-                        
+
                         dpg.add_button(
-                            label="Clear...", 
-                            tag="clear_recents_btn", 
+                            label="Clear...",
+                            tag="clear_recents_btn",
                             callback=self._on_clear_recents,
                             small=True
                         )
@@ -588,7 +631,6 @@ class LauncherApp:
                             with dpg.group(horizontal=True):
                                 dpg.add_button(label="Save", tag="readme_save_button", callback=self._on_save_readme, show=False)
                                 dpg.add_button(label="View", tag="readme_view_button", callback=self._on_view_readme, show=False)
-                                dpg.add_button(label="Wrap: ON", tag="readme_wrap_toggle", callback=self._on_toggle_readme_wrap, show=False)
                             
                             # Initial population
                             self._rebuild_readme_ui_internal()
@@ -698,6 +740,34 @@ class LauncherApp:
 
         dpg.bind_item_theme("templates_list", "template_list_theme")
 
+    def _apply_search_filter_theme(self):
+        """Apply or remove a subtle yellow tint on the active file list when filtering."""
+        # Create the theme once
+        if not dpg.does_item_exist("search_filter_active_theme"):
+            with dpg.theme(tag="search_filter_active_theme"):
+                tint = [45, 42, 20, 166]
+                with dpg.theme_component(dpg.mvChildWindow):
+                    dpg.add_theme_color(dpg.mvThemeCol_ChildBg, tint)
+                with dpg.theme_component(dpg.mvAll):
+                    dpg.add_theme_color(dpg.mvThemeCol_ChildBg, tint)
+                    dpg.add_theme_color(dpg.mvThemeCol_WindowBg, tint)
+                    dpg.add_theme_color(dpg.mvThemeCol_FrameBg, tint)
+
+        is_recent = self._get_current_tab() != 'templates'
+        list_tag = "recent_files_list" if is_recent else "templates_list"
+
+        if not dpg.does_item_exist(list_tag):
+            return
+
+        if self.search_filter:
+            dpg.bind_item_theme(list_tag, "search_filter_active_theme")
+        else:
+            # Restore original: templates get their green theme, recents get no theme
+            if is_recent:
+                dpg.bind_item_theme(list_tag, 0)
+            else:
+                self._apply_template_theme()
+
     def _is_versioned_toe(self, filename: str) -> bool:
         """Check if filename has .number.toe format (e.g., project.7.toe)."""
         if not filename.lower().endswith('.toe'):
@@ -708,6 +778,24 @@ class LauncherApp:
             return parts[1].isdigit()
         return False
 
+    def _matches_search(self, *texts: str) -> bool:
+        """Check if any of the given texts match the current search filter.
+        Supports wildcard patterns (* and ?) via fnmatch when present,
+        otherwise falls back to simple substring matching.
+        """
+        if not self.search_filter:
+            return True
+        if '*' in self.search_filter or '?' in self.search_filter:
+            import fnmatch
+            pattern = self.search_filter
+            # Wrap in * so partial matches work: "vj*proj" matches "my_vj_project"
+            if not pattern.startswith('*'):
+                pattern = '*' + pattern
+            if not pattern.endswith('*'):
+                pattern = pattern + '*'
+            return any(fnmatch.fnmatch(t.lower(), pattern) for t in texts)
+        return any(self.search_filter in t.lower() for t in texts)
+
     def _build_recent_files_list(self):
         """Build the recent files list."""
         if dpg.does_item_exist("recent_files_list"):
@@ -715,6 +803,7 @@ class LauncherApp:
 
 
         self.visible_recent_files = []
+        self.missing_recent_indices = set()
         # Pass the merge flag based on config
         recent_files = self.config.get_recent_files(merged=self.config.show_full_history)
         
@@ -794,6 +883,10 @@ class LauncherApp:
             else:
                 display_name = filename
 
+            # Apply search filter (match against display name and full path)
+            if self.search_filter and not self._matches_search(display_name, file_path):
+                continue
+
             # Skip if we've already shown this path (normalize for case/slash differences)
             norm_path = os.path.normcase(os.path.normpath(os.path.abspath(file_path)))
             if norm_path in shown_paths:
@@ -806,9 +899,13 @@ class LauncherApp:
             i = display_index
             display_index += 1
 
+            # Track missing files for navigation skip
+            if not exists:
+                self.missing_recent_indices.add(i)
+
             # Determine source for styling
             source = rf.get('source', 'legacy') if isinstance(rf, dict) else 'legacy'
-            
+
             with dpg.group(horizontal=True, parent="recent_files_list", tag=f"recent_row_{i}"):
                 # Icon
                 if show_icons:
@@ -820,7 +917,8 @@ class LauncherApp:
                         texture_tag = load_default_icon()
                     if texture_tag:
                         dpg.add_image(texture_tag, width=50, height=50, tag=f"recent_icon_{i}")
-                        dpg.bind_item_handler_registry(f"recent_icon_{i}", "row_click_handler")
+                        if exists:
+                            dpg.bind_item_handler_registry(f"recent_icon_{i}", "row_click_handler")
 
                 # Content group for vertical centering
                 with dpg.group():
@@ -828,17 +926,17 @@ class LauncherApp:
                         dpg.add_spacer(height=15)
                     with dpg.group(horizontal=True):
                         # Filename (selectable)
-                        
+
                         # Apply custom text color based on source
                         # Normalize paths for comparison
                         abs_file_path = os.path.abspath(file_path) if file_path else ""
                         abs_active_path = os.path.abspath(self.active_manual_file) if self.active_manual_file else ""
-                        
+
                         # Check if this is the currently selected file (for DPG visual state)
                         is_currently_selected = False
-                        if self.selected_file:
+                        if self.selected_file and exists:
                             is_currently_selected = (abs_file_path == os.path.abspath(self.selected_file))
-                        
+
                         # Check if this is the active manual file (for Source coloring - Green)
                         is_active_session_source = (abs_file_path == abs_active_path)
 
@@ -854,13 +952,16 @@ class LauncherApp:
                         dpg.add_selectable(
                             label=display_name,
                             tag=f"recent_file_{i}",
-                            callback=self._on_file_selected,
+                            callback=self._on_file_selected if exists else None,
                             user_data={'path': file_path, 'type': 'recent', 'source': user_source_type},
                             width=calculated_width,
                             default_value=is_currently_selected
                         )
-                        
-                        if is_currently_selected:
+
+                        if not exists:
+                            # Missing file: gray out with no hover
+                            dpg.bind_item_theme(f"recent_file_{i}", "missing_item_theme")
+                        elif is_currently_selected:
                             self.active_highlight_tags.add(f"recent_file_{i}")
                             # Bind selected theme (Blue hover)
                             # Check for Global Version Focus first - Use Green Theme
@@ -891,42 +992,46 @@ class LauncherApp:
                                 # Default theme (gray hover)
                                 if dpg.does_item_exist("default_item_theme"):
                                     dpg.bind_item_theme(f"recent_file_{i}", "default_item_theme")
-                            
-                        summary = get_project_summary(file_path)
+
+                        summary = get_project_summary(file_path) if exists else None
                         with dpg.tooltip(dpg.last_item()):
                             dpg.add_text(summary if summary else file_path, wrap=400)
 
-                        # Remove button (moved next to name)
+                        # Remove button (hidden on macOS for td-source items since .sfl4 is read-only)
+                        can_remove = not (platform.system() != 'Windows' and user_source_type == 'td')
                         dpg.add_button(
                             label="X",
                             tag=f"remove_recent_{i}",
                             callback=self._on_remove_recent,
                             user_data=file_path,
-                            small=True
+                            small=True,
+                            show=can_remove
                         )
 
                         # Modified date
+                        gray = [100, 100, 100, 120]
                         dpg.add_text(
-                            f"  {modified}",
-                            color=[100, 150, 100, 255] if exists else [100, 50, 50, 255],
+                            f"  {modified}" if exists else "",
+                            color=[100, 150, 100, 255] if exists else gray,
                             tag=f"recent_mod_{i}"
                         )
-                        dpg.bind_item_handler_registry(f"recent_mod_{i}", "row_click_handler")
+                        if exists:
+                            dpg.bind_item_handler_registry(f"recent_mod_{i}", "row_click_handler")
 
                         # Path
                         dpg.add_text(
                             f"  {file_path}",
-                            color=[150, 150, 150, 255] if exists else [100, 50, 50, 255],
+                            color=[150, 150, 150, 255] if exists else gray,
                             tag=f"recent_path_{i}"
                         )
-                        dpg.bind_item_handler_registry(f"recent_path_{i}", "row_click_handler")
+                        if exists:
+                            dpg.bind_item_handler_registry(f"recent_path_{i}", "row_click_handler")
                         with dpg.tooltip(dpg.last_item()):
                             dpg.add_text(file_path, wrap=400)
 
                         # Missing indicator
                         if not exists:
-                            dpg.add_text(" (missing)", color=[255, 50, 0, 255], tag=f"recent_missing_{i}")
-                            dpg.bind_item_handler_registry(f"recent_missing_{i}", "row_click_handler")
+                            dpg.add_text(" (missing)", color=[100, 100, 100, 180], tag=f"recent_missing_{i}")
 
     def _build_templates_list(self):
         """Build the templates list."""
@@ -934,6 +1039,7 @@ class LauncherApp:
             dpg.delete_item("templates_list", children_only=True)
 
         self.visible_templates = []
+        self.missing_template_indices = set()
         templates = self.config.get_templates()
         show_icons = self.config.show_icons
 
@@ -972,14 +1078,25 @@ class LauncherApp:
                     dpg.bind_item_handler_registry(f"template_path_{display_index}", "row_click_handler")
         display_index += 1
 
-        for i, t in enumerate(templates):
+        for t in templates:
             # Handle both string paths and dict entries
             file_path = t if isinstance(t, str) else t.get('path', '')
-            self.visible_templates.append(file_path)
             name = os.path.basename(file_path) if isinstance(t, str) else t.get('name', os.path.basename(file_path))
+
+            # Apply search filter
+            if self.search_filter and not self._matches_search(name, file_path):
+                continue
+
+            self.visible_templates.append(file_path)
             exists = os.path.exists(file_path)
             modified = format_file_modified_time(file_path) if exists else ""
-            di = display_index + i
+            di = display_index
+
+            # Track missing files for navigation skip
+            if not exists:
+                self.missing_template_indices.add(di)
+
+            gray = [100, 100, 100, 120]
 
             with dpg.group(horizontal=True, parent="templates_list", tag=f"template_row_{di}"):
                 # Icon
@@ -992,7 +1109,8 @@ class LauncherApp:
                         texture_tag = load_default_icon()
                     if texture_tag:
                         dpg.add_image(texture_tag, width=50, height=50, tag=f"template_icon_{di}")
-                        dpg.bind_item_handler_registry(f"template_icon_{di}", "row_click_handler")
+                        if exists:
+                            dpg.bind_item_handler_registry(f"template_icon_{di}", "row_click_handler")
 
                 # Content group for vertical centering
                 with dpg.group():
@@ -1003,15 +1121,18 @@ class LauncherApp:
                         dpg.add_selectable(
                             label=name,
                             tag=f"template_{di}",
-                            callback=self._on_file_selected,
+                            callback=self._on_file_selected if exists else None,
                             user_data={'path': file_path, 'type': 'template'},
                             width=calculated_width
                         )
-                        summary = get_project_summary(file_path)
+                        if not exists:
+                            dpg.bind_item_theme(f"template_{di}", "missing_item_theme")
+
+                        summary = get_project_summary(file_path) if exists else None
                         with dpg.tooltip(dpg.last_item()):
                             dpg.add_text(summary if summary else file_path, wrap=400)
 
-                        # Up Button
+                        # Up/Down/Remove buttons — always shown for templates (user can still reorder/remove)
                         dpg.add_button(
                             label="^",
                             tag=f"template_up_{di}",
@@ -1020,7 +1141,6 @@ class LauncherApp:
                             small=True
                         )
 
-                        # Down Button
                         dpg.add_button(
                             label="v",
                             tag=f"template_down_{di}",
@@ -1029,7 +1149,6 @@ class LauncherApp:
                             small=True
                         )
 
-                        # Remove button
                         dpg.add_button(
                             label="X",
                             tag=f"remove_template_{di}",
@@ -1039,19 +1158,25 @@ class LauncherApp:
                         )
 
                         # Modified date
-                        dpg.add_text(f"  {modified}", color=[100, 150, 100, 255], tag=f"template_mod_{di}")
-                        dpg.bind_item_handler_registry(f"template_mod_{di}", "row_click_handler")
+                        dpg.add_text(
+                            f"  {modified}" if exists else "",
+                            color=[100, 150, 100, 255] if exists else gray,
+                            tag=f"template_mod_{di}"
+                        )
+                        if exists:
+                            dpg.bind_item_handler_registry(f"template_mod_{di}", "row_click_handler")
 
                         # Path
-                        dpg.add_text(f"  {file_path}", color=[150, 150, 150, 255], tag=f"template_path_{di}")
-                        dpg.bind_item_handler_registry(f"template_path_{di}", "row_click_handler")
+                        dpg.add_text(f"  {file_path}", color=[150, 150, 150, 255] if exists else gray, tag=f"template_path_{di}")
+                        if exists:
+                            dpg.bind_item_handler_registry(f"template_path_{di}", "row_click_handler")
                         with dpg.tooltip(dpg.last_item()):
                             dpg.add_text(file_path, wrap=400)
 
                         # Missing indicator
                         if not exists:
-                            dpg.add_text(" (missing)", color=[255, 50, 0, 255], tag=f"template_missing_{i}")
-                            dpg.bind_item_handler_registry(f"template_missing_{i}", "row_click_handler")
+                            dpg.add_text(" (missing)", color=[100, 100, 100, 180], tag=f"template_missing_{di}")
+            display_index += 1
 
     def _build_version_panel(self):
         """Build the version panel section."""
@@ -1113,7 +1238,7 @@ class LauncherApp:
                     # Use buffer if editing, otherwise disk content
                     active_text = self.readme_edit_buffer if self.readme_editing_active else disk_content
 
-                    if not self.readme_editing_active and self.readme_wrapped:
+                    if not self.readme_editing_active:
                         vp_width = dpg.get_viewport_width()
                         dynamic_width = max(30, int((vp_width - 630) / 9))
                         gutter, display_content = self._wrap_content_with_gutter(active_text, width=dynamic_width)
@@ -1134,7 +1259,7 @@ class LauncherApp:
                     dpg.add_text(
                         display_content,
                         tag="readme_content_display",
-                        wrap=540 if self.readme_wrapped else 0
+                        wrap=540
                     )
                 else:
                     # Raw input for editing - use the buffer!
@@ -1142,7 +1267,7 @@ class LauncherApp:
                         default_value=self.readme_edit_buffer,
                         tag="readme_content_text",
                         multiline=True,
-                        width=2000 if not self.readme_wrapped else -1,
+                        width=-1,
                         height=400,
                         callback=self._on_readme_changed,
                         on_enter=False
@@ -1516,32 +1641,6 @@ class LauncherApp:
                     callback=self._on_install
                 )
 
-    def _on_toggle_readme_wrap(self, sender, app_data):
-        """Toggle between wrapped view and raw edit."""
-        self.readme_wrapped = not self.readme_wrapped
-        label = "Wrap: ON" if self.readme_wrapped else "Wrap: OFF"
-        dpg.configure_item("readme_wrap_toggle", label=label)
-        
-        # Re-process current content
-        content = dpg.get_value("readme_content_text")
-        if self.readme_wrapped:
-            # Wrap it
-            gutter, wrapped = self._wrap_content_with_gutter(self._unwrap_content(content))
-            dpg.set_value("readme_content_text", wrapped)
-            dpg.set_value("readme_gutter_text", gutter)
-            dpg.configure_item("readme_content_text", width=-1)
-        else:
-            # Unwrap it
-            unwrapped = self._unwrap_content(content)
-            dpg.set_value("readme_content_text", unwrapped)
-            # Simple gutter for unwrapped
-            num_lines = unwrapped.count('\n') + 1
-            gutter = '\n'.join([f"{i+1:>3} " for i in range(num_lines)])
-            dpg.set_value("readme_gutter_text", gutter)
-            dpg.configure_item("readme_content_text", width=2048)
-        
-        self._sync_readme_height()
-
     def _sync_readme_height(self):
         """Sync editor height to content to avoid internal scrollbars."""
         if not dpg.does_item_exist("readme_content_text"):
@@ -1621,8 +1720,6 @@ class LauncherApp:
                 dpg.configure_item("readme_save_button", show=True)
             if dpg.does_item_exist("readme_view_button"):
                 dpg.configure_item("readme_view_button", show=True)
-            if dpg.does_item_exist("readme_wrap_toggle"):
-                dpg.configure_item("readme_wrap_toggle", show=True)
             
             self.readme_modified = False
             # Trigger surgical rebuild to show the content of the new file
@@ -1863,6 +1960,14 @@ class LauncherApp:
             if dpg.does_item_exist("show_full_history_checkbox"):
                 dpg.configure_item("show_full_history_checkbox", show=False)
 
+        # Rebuild the newly-visible list if a search filter is active (and update theme)
+        if self.search_filter:
+            if tab_tag == "recent_files_tab":
+                self._build_recent_files_list()
+            else:
+                self._build_templates_list()
+            self._apply_search_filter_theme()
+
         # Restore selection for the newly active tab
         self.selection_focus = 'picker'
         current_tab = 'recent' if tab_tag == "recent_files_tab" else 'templates'
@@ -1880,6 +1985,58 @@ class LauncherApp:
         self.config.show_full_history = app_data
         self._build_recent_files_list()
         self._restore_selection_highlight()
+
+    def _on_search_filter_changed(self, sender, app_data):
+        """Handle search filter input change — rebuild the active file list."""
+        self.search_filter = app_data.strip().lower() if app_data else ""
+        current_tab = self._get_current_tab()
+        if current_tab == 'templates':
+            self._build_templates_list()
+        else:
+            self._build_recent_files_list()
+        self._apply_search_filter_theme()
+
+        # Show/hide clear button
+        if dpg.does_item_exist("search_clear_btn"):
+            dpg.configure_item("search_clear_btn", show=bool(self.search_filter))
+
+        # Auto-select the first match
+        items = self.visible_recent_files if current_tab == 'recent' else self.visible_templates
+        if items:
+            self.tab_selection_indices[current_tab] = 0
+            self._move_picker_selection(0)
+
+    def _on_search_clear(self, sender, app_data):
+        """Handle search clear (X) button click — clear filter and exit search mode."""
+        dpg.set_value("search_filter_input", "")
+        self._on_search_filter_changed(None, "")
+        self._deactivate_search_input()
+
+    def _activate_search_input(self, sender=None, app_data=None):
+        """Show the real search input, hide the placeholder button, and focus it."""
+        self.search_input_active = True
+        if dpg.does_item_exist("search_placeholder_btn"):
+            dpg.configure_item("search_placeholder_btn", show=False)
+        if dpg.does_item_exist("search_filter_input"):
+            dpg.configure_item("search_filter_input", show=True)
+            dpg.focus_item("search_filter_input")
+
+    def _on_search_deactivated(self, sender, app_data):
+        """Called when the search input is deactivated (e.g. Enter or click-away). Return focus to file list."""
+        self._deactivate_search_input()
+
+    def _deactivate_search_input(self):
+        """Hide the search input, show the placeholder button, return focus to file list."""
+        self.search_input_active = False
+        # Hide input, show placeholder button
+        if dpg.does_item_exist("search_filter_input"):
+            dpg.configure_item("search_filter_input", show=False)
+        if dpg.does_item_exist("search_placeholder_btn"):
+            # Show current filter text in button label (or "Search..." if empty)
+            label = self.search_filter if self.search_filter else "Search..."
+            dpg.configure_item("search_placeholder_btn", label=label, show=True)
+        if dpg.does_item_exist("file_picker_tabs"):
+            dpg.focus_item("file_picker_tabs")
 
     def _on_clear_recents(self, sender, app_data):
         """Handle clear history button click."""
@@ -1959,6 +2116,32 @@ class LauncherApp:
                 logger.debug("Shortcut: Saving README via Ctrl+S")
                 self._on_save_readme(None, None)
                 return
+
+        # Ctrl+F — toggle search field focus
+        if modifier_held and key_code == getattr(dpg, 'mvKey_F', -1):
+            if self.search_input_active:
+                self._deactivate_search_input()
+            else:
+                self._activate_search_input()
+            return
+
+        # While search input is active: allow Up/Down navigation, Escape clears, Enter exits
+        if self.search_input_active:
+            if key_code == getattr(dpg, 'mvKey_Escape', -1):
+                dpg.set_value("search_filter_input", "")
+                self._on_search_filter_changed(None, "")
+                self._deactivate_search_input()
+                return
+            if key_code == getattr(dpg, 'mvKey_Return', -1):
+                self._deactivate_search_input()
+                return
+            # Let Up/Down through to navigate the file list while searching
+            if key_code in (getattr(dpg, 'mvKey_Up', None), getattr(dpg, 'mvKey_Down', None)):
+                direction = -1 if key_code == getattr(dpg, 'mvKey_Up', None) else 1
+                self._move_picker_selection(direction)
+                return
+            # Block all other keys so they go to the text input
+            return
 
         # Skip navigation shortcuts if README is focused AND in editing mode
         is_readme_focused = dpg.is_item_focused("readme_content_text") if dpg.does_item_exist("readme_content_text") else False
@@ -2128,9 +2311,6 @@ class LauncherApp:
         # Tab - switch tabs
         if key_code == getattr(dpg, 'mvKey_Tab', None):
             self._switch_picker_tab()
-            # Force focus back to tab bar so it never lands in textbox
-            if dpg.does_item_exist("file_picker_tabs"):
-                dpg.focus_item("file_picker_tabs")
             return
 
         # Up/W - move selection up (or reorder template with modifier)
@@ -2174,21 +2354,27 @@ class LauncherApp:
 
         # Escape - close modal if one is open, otherwise exit
         if key_code == getattr(dpg, 'mvKey_Escape', None):
-            for modal_tag in ("help_modal", "about_modal", "first_run_modal",
-                              "install_prompt_modal", "delete_installer_modal"):
+            for modal_tag in ("settings_modal", "help_modal", "about_modal",
+                              "first_run_modal", "install_prompt_modal",
+                              "delete_installer_modal"):
                 if dpg.does_item_exist(modal_tag):
                     dpg.delete_item(modal_tag)
                     return
             dpg.stop_dearpygui()
             return
 
-        # Backspace/Delete - remove from list
+        # Backspace/Delete - remove from list (skip td-source items on macOS)
         if key_code in (
             getattr(dpg, 'mvKey_Back', None),
             getattr(dpg, 'mvKey_Backspace', None),
             getattr(dpg, 'mvKey_Delete', None),
         ):
             if self.selected_file and self.last_clicked_path:
+                # On macOS, block deletion of td-source items (.sfl4 is read-only)
+                if platform.system() != 'Windows' and self._get_current_tab() == 'recent':
+                    sel_source = self._get_selected_item_source()
+                    if sel_source == 'td':
+                        return
                 self._confirm_and_remove(self.last_clicked_path)
             return
 
@@ -2227,6 +2413,11 @@ class LauncherApp:
             if idx < 0 or idx >= len(items):
                 return
 
+            # Skip missing files
+            missing = self.missing_recent_indices if clicked_tag.startswith("recent_") else self.missing_template_indices
+            if idx in missing:
+                return
+
             file_path = items[idx] if isinstance(items[idx], str) else items[idx].get('path', '')
             if not file_path:
                 return
@@ -2250,6 +2441,11 @@ class LauncherApp:
     def _on_file_selected(self, sender, app_data, user_data):
         """Handle file selection."""
         file_path = user_data.get('path', '')
+
+        # Block selection of missing files
+        if file_path and file_path != DEFAULT_TEMPLATE and not os.path.exists(file_path):
+            return
+
         current_time = time.time()
 
         # Sync logical focus to picker
@@ -2420,6 +2616,7 @@ class LauncherApp:
 
         self._build_ui()
         self.readme_editing_active = False # Reset focus state on rebuild
+        self.search_input_active = False   # Reset search state on rebuild
         if dpg.does_item_exist("file_picker_tabs"):
             dpg.focus_item("file_picker_tabs") # Force DPG focus away from text fields
 
@@ -2792,6 +2989,85 @@ class LauncherApp:
         except Exception as e:
             logger.error(f"Failed to set file association: {e}")
 
+    def _show_settings_modal(self, sender=None, app_data=None):
+        """Show the Settings modal."""
+        modal_tag = "settings_modal"
+        if dpg.does_item_exist(modal_tag):
+            dpg.delete_item(modal_tag)
+
+        viewport_width = dpg.get_viewport_width()
+        viewport_height = dpg.get_viewport_height()
+        modal_width = 320
+        modal_height = 190
+
+        current_max = self.config._config.get('max_recent_files', 33)
+
+        with dpg.window(
+            label="Settings",
+            tag=modal_tag,
+            modal=True,
+            show=True,
+            no_resize=True,
+            no_move=True,
+            width=modal_width,
+            height=modal_height,
+            pos=[(viewport_width - modal_width) // 2, (viewport_height - modal_height) // 2]
+        ):
+            dpg.add_text("Settings", color=[50, 255, 0, 255])
+            dpg.add_spacer(height=8)
+
+            with dpg.group(horizontal=True):
+                dpg.add_text("Max recent files:")
+                dpg.add_input_int(
+                    tag="settings_max_recent",
+                    default_value=current_max,
+                    min_value=5,
+                    max_value=200,
+                    min_clamped=True,
+                    max_clamped=True,
+                    width=100,
+                    step=1,
+                )
+
+            dpg.add_spacer(height=4)
+            with dpg.group(horizontal=True):
+                dpg.add_button(label="Clear Missing Files", callback=self._on_clear_missing_files)
+                dpg.add_text("", tag="settings_clear_missing_status")
+
+            dpg.add_spacer(height=8)
+            with dpg.table(header_row=False, width=-1):
+                dpg.add_table_column(width_stretch=True)
+                dpg.add_table_column(width_fixed=True)
+                dpg.add_table_column(width_stretch=True)
+                with dpg.table_row():
+                    dpg.add_text("")
+                    with dpg.group(horizontal=True):
+                        dpg.add_button(label="Save", callback=self._on_save_settings)
+                        dpg.add_button(label="Cancel", callback=lambda: dpg.delete_item(modal_tag))
+                    dpg.add_text("")
+
+    def _on_save_settings(self, sender=None, app_data=None):
+        """Save settings from the settings modal."""
+        if dpg.does_item_exist("settings_max_recent"):
+            new_max = dpg.get_value("settings_max_recent")
+            self.config._config['max_recent_files'] = new_max
+            self.config.save()
+            logger.info(f"Settings saved: max_recent_files={new_max}")
+        if dpg.does_item_exist("settings_modal"):
+            dpg.delete_item("settings_modal")
+
+    def _on_clear_missing_files(self, sender=None, app_data=None):
+        """Remove all entries whose files no longer exist on disk."""
+        removed = self.config.clear_missing_files()
+        # Rebuild both lists
+        self._build_recent_files_list()
+        self._build_templates_list()
+        self._restore_selection_highlight()
+        # Show status in the modal
+        if dpg.does_item_exist("settings_clear_missing_status"):
+            msg = f"Removed {removed} file(s)" if removed else "No missing files found"
+            dpg.configure_item("settings_clear_missing_status", default_value=msg, color=[180, 180, 180, 255])
+
     def _show_about_modal(self, sender, app_data):
         """Show the About / Info modal."""
         modal_tag = "about_modal"
@@ -2886,6 +3162,12 @@ class LauncherApp:
                     ("Space", "Toggle focus: File List / Versions"),
                     ("Enter", "Launch selected project"),
                     ("Esc", "Quit"),
+                ]),
+                ("Search", [
+                    (f"{mod}+F", "Open / close search"),
+                    ("Esc", "Clear search and close"),
+                    ("Enter", "Close search (keep filter)"),
+                    ("Up / Down", "Navigate filtered list"),
                 ]),
                 ("Interface", [
                     ("C", "Toggle icons"),
@@ -3099,52 +3381,82 @@ class LauncherApp:
             self._move_picker_selection(0)
 
     def _move_picker_selection(self, step: int, instant: bool = False):
-        """Move selection up or down in the current list."""
+        """Move selection up or down in the current list, skipping missing files."""
         current_tab = self._get_current_tab()
 
         if current_tab == 'recent':
             items = self.visible_recent_files
             prefix = "recent_file_"
+            missing = self.missing_recent_indices
         else:
             items = self.visible_templates
             prefix = "template_"
+            missing = self.missing_template_indices
 
         if not items:
             return
 
+        n = len(items)
+
         # Initialize to 0 if starting from -1
         if self.tab_selection_indices[current_tab] == -1:
-            self.tab_selection_indices[current_tab] = 0
+            candidate = 0
         else:
-            self.tab_selection_indices[current_tab] = (self.tab_selection_indices[current_tab] + step) % len(items)
+            candidate = (self.tab_selection_indices[current_tab] + step) % n
+
+        # Skip missing indices (up to n attempts to avoid infinite loop)
+        if step != 0:
+            for _ in range(n):
+                if candidate not in missing:
+                    break
+                candidate = (candidate + (1 if step > 0 else -1)) % n
+            else:
+                # All items are missing — nothing to select
+                return
+
+        # If step==0 (restore/init) and the candidate is missing, find nearest available
+        if candidate in missing:
+            found = False
+            for offset in range(1, n):
+                for direction in (1, -1):
+                    test = (candidate + offset * direction) % n
+                    if test not in missing:
+                        candidate = test
+                        found = True
+                        break
+                if found:
+                    break
+            if not found:
+                return
+
+        self.tab_selection_indices[current_tab] = candidate
 
         # Update visual selection
         self._clear_all_selections()
-        tag = f"{prefix}{self.tab_selection_indices[current_tab]}"
+        tag = f"{prefix}{candidate}"
         if dpg.does_item_exist(tag):
             self._set_row_highlight(tag, True)
-            
-            # Scroll to selection
+
+            # Scroll to keep selection visible
+            row_prefix = "recent_row_" if current_tab == 'recent' else "template_row_"
+            row_tag = f"{row_prefix}{candidate}"
             container = "recent_files_list" if current_tab == 'recent' else "templates_list"
-            if dpg.does_item_exist(container):
-                # Precise row heights based on DPG metrics:
-                # With icons: Image(50) + vertical spacing(4) + potential header overhead + container padding
-                # Standard DPG row in this layout with 50px icon ends up ~68-72px including spacing.
-                row_h = 68 if self.config.show_icons else 32
-                target_y = self.tab_selection_indices[current_tab] * row_h
-                
+            if dpg.does_item_exist(row_tag) and dpg.does_item_exist(container):
+                row_pos = dpg.get_item_pos(row_tag)       # [x, y] relative to content area
+                row_size = dpg.get_item_rect_size(row_tag) # [w, h]
+                row_y = row_pos[1]
+                row_h = row_size[1] if row_size[1] > 0 else 32
+
                 curr_scroll = dpg.get_y_scroll(container)
-                page_h = 280  # Consistent height for both modes
-                
-                # If we're moving Up and selection is above the fold
-                if target_y < curr_scroll:
-                    dpg.set_y_scroll(container, max(0, target_y - 4)) 
-                # If we're moving Down and selection is below the fold
-                elif target_y + row_h > curr_scroll + page_h:
-                    dpg.set_y_scroll(container, target_y + row_h - page_h + 4)
+                container_h = dpg.get_item_rect_size(container)[1]
+
+                if row_y < curr_scroll:
+                    dpg.set_y_scroll(container, max(0, row_y - 4))
+                elif row_y + row_h > curr_scroll + container_h:
+                    dpg.set_y_scroll(container, row_y + row_h - container_h + 4)
 
         # Update selected file
-        item = items[self.tab_selection_indices[current_tab]]
+        item = items[candidate]
         file_path = item if isinstance(item, str) else item.get('path', '')
         if file_path == DEFAULT_TEMPLATE or os.path.exists(file_path):
             self.selected_file = file_path
@@ -3247,6 +3559,22 @@ class LauncherApp:
     # =========================================================================
     # Helpers
     # =========================================================================
+
+    def _get_selected_item_source(self) -> Optional[str]:
+        """Get the source type ('td', 'launcher', 'active', 'default') of the currently selected recent file."""
+        try:
+            current_tab = self._get_current_tab()
+            if current_tab != 'recent':
+                return None
+            idx = self.tab_selection_indices.get('recent', 0)
+            tag = f"recent_file_{idx}"
+            if dpg.does_item_exist(tag):
+                ud = dpg.get_item_user_data(tag)
+                if isinstance(ud, dict):
+                    return ud.get('source')
+        except Exception:
+            pass
+        return None
 
     def _get_current_tab(self) -> str:
         """Get the current picker tab."""
