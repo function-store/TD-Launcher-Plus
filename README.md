@@ -20,9 +20,9 @@ This repo is based on [TD Launcher by EnviralDesign](https://github.com/envirald
 
 ## What's this for
 
-TD Launcher Plus is a project manager for TouchDesigner that helps you keep track of your projects and launch them with the correct version automatically. It also includes a built-in documentation viewer and editor, so you can keep your project notes up to date.
+TD Launcher Plus is especially useful if you have multiple TouchDesigner versions installed, you often forget what you were working on yesterday and find yourself opening TD just to browse the recent files list, or you want to quickly choose between different default startup files — like one with your personal toolkit loaded, one without, a VJ performance setup, and so on.
 
-It can serve as a go-to dashboard for your TouchDesigner projects, whether you're working on a single project or many. It can also be used as a quick way to launch TD with a specific version, or to open a specific project.
+It keeps track of your projects, launches them with the correct version automatically, and includes a built-in documentation viewer and editor so your project notes stay with your files.
 
 ## How this works
 

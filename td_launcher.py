@@ -32,7 +32,7 @@ from utils import (
 )
 
 # Version
-APP_VERSION = "2.0.4"
+APP_VERSION = "2.0.5"
 
 # Sentinel for the "Default" template entry (launch TD without a file)
 DEFAULT_TEMPLATE = "__default__"
@@ -440,7 +440,10 @@ class LauncherApp:
                     
                     dpg.bind_item_handler_registry("header_caption", "author_fs_handler_registry")
                         
-                    dpg.add_button(label="Info", callback=self._show_about_modal, small=True)
+                    with dpg.group(horizontal=True):
+                        dpg.add_button(
+                            label="Help", callback=self._show_help_modal, small=True)
+                        dpg.add_button(label="About", callback=self._show_about_modal, small=True)
             
             dpg.add_separator()
             
@@ -2091,8 +2094,13 @@ class LauncherApp:
                 self._on_launch(sender, app_data)
             return
 
-        # Escape - exit
+        # Escape - close modal if one is open, otherwise exit
         if key_code == getattr(dpg, 'mvKey_Escape', None):
+            for modal_tag in ("help_modal", "about_modal", "first_run_modal",
+                              "install_prompt_modal", "delete_installer_modal"):
+                if dpg.does_item_exist(modal_tag):
+                    dpg.delete_item(modal_tag)
+                    return
             dpg.stop_dearpygui()
             return
 
@@ -2749,6 +2757,119 @@ class LauncherApp:
                         dpg.add_button(label="Update", callback=self._on_check_updates)
                         dpg.add_button(label="Close", callback=lambda: dpg.delete_item(modal_tag))
                     dpg.add_text("") # Right stretch
+
+    def _show_help_modal(self, sender=None, app_data=None):
+        """Show the Help modal with keyboard shortcuts and utility TOX info."""
+        modal_tag = "help_modal"
+        if dpg.does_item_exist(modal_tag):
+            dpg.delete_item(modal_tag)
+
+        mod = "Cmd" if platform.system() == 'Darwin' else "Ctrl"
+
+        viewport_width = dpg.get_viewport_width()
+        viewport_height = dpg.get_viewport_height()
+        modal_width = 420
+        modal_height = 520
+
+        with dpg.window(
+            label="Help",
+            tag=modal_tag,
+            modal=True,
+            show=True,
+            no_resize=True,
+            no_move=True,
+            width=modal_width,
+            height=modal_height,
+            pos=[(viewport_width - modal_width) // 2, (viewport_height - modal_height) // 2]
+        ):
+            # --- Keyboard Shortcuts ---
+            dpg.add_text("Keyboard Shortcuts", color=[50, 255, 0, 255])
+            dpg.add_spacer(height=4)
+
+            shortcuts = [
+                # (category_label, [(key, action), ...])
+                ("Navigation", [
+                    ("Tab", "Switch tabs (Recent / Templates)"),
+                    ("Up / W", "Select previous file"),
+                    ("Down / S", "Select next file"),
+                    ("Space", "Toggle focus: File List / Versions"),
+                    ("Enter", "Launch selected project"),
+                    ("Esc", "Quit"),
+                ]),
+                ("Interface", [
+                    ("C", "Toggle icons"),
+                    ("E", "Toggle info panel"),
+                    (f"{mod}+E", "Edit README"),
+                ]),
+                ("File Management", [
+                    ("Del / Backspace", "Remove selected file"),
+                    (f"{mod}+Up/Down", "Reorder templates"),
+                    (f"{mod}+S", "Save README"),
+                ]),
+                ("Quick Launch", [
+                    (f"{mod}+D", "Launch TD (default startup)"),
+                    (f"{mod}+1-9", "Launch template by position"),
+                ]),
+            ]
+
+            with dpg.table(header_row=True, borders_innerH=True,
+                           borders_outerH=True, borders_innerV=True,
+                           borders_outerV=True, width=-1,
+                           policy=dpg.mvTable_SizingStretchProp):
+                dpg.add_table_column(label="Key", width_fixed=True, init_width_or_weight=140)
+                dpg.add_table_column(label="Action")
+
+                for cat_label, bindings in shortcuts:
+                    # Category header row
+                    with dpg.table_row():
+                        dpg.add_text(cat_label, color=[150, 150, 150, 255])
+                        dpg.add_text("")
+                    for key, action in bindings:
+                        with dpg.table_row():
+                            dpg.add_text(key, color=[255, 255, 200, 255])
+                            dpg.add_text(action)
+
+            # --- Utility TOX ---
+            dpg.add_spacer(height=12)
+            dpg.add_text("Companion Utility TOX", color=[255, 200, 50, 255])
+            dpg.add_spacer(height=4)
+            dpg.add_text(
+                "Syncs recent files and auto-generates project\n"
+                "icons from the /perform window when you save.",
+                color=[180, 180, 180, 255]
+            )
+            dpg.add_spacer(height=4)
+            with dpg.group(horizontal=True):
+                dpg.add_text("  Get", color=[180, 180, 180, 255])
+                help_link_btn = dpg.add_button(
+                    label="TDLauncherPlusUtility.tox",
+                    callback=lambda: webbrowser.open(
+                        "https://github.com/function-store/TD-Launcher-Plus/releases/latest"
+                    ),
+                    small=True,
+                )
+                with dpg.theme() as help_link_theme:
+                    with dpg.theme_component(dpg.mvButton):
+                        dpg.add_theme_color(dpg.mvThemeCol_Button, [0, 0, 0, 0])
+                        dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, [0, 0, 0, 0])
+                        dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, [0, 0, 0, 0])
+                        dpg.add_theme_color(dpg.mvThemeCol_Text, [100, 180, 255, 255])
+                dpg.bind_item_theme(help_link_btn, help_link_theme)
+            dpg.add_text(
+                "  Add to your default startup .toe file.",
+                color=[180, 180, 180, 255]
+            )
+
+            # --- Close ---
+            dpg.add_spacer(height=10)
+            with dpg.table(header_row=False, width=-1):
+                dpg.add_table_column(width_stretch=True)
+                dpg.add_table_column(width_fixed=True)
+                dpg.add_table_column(width_stretch=True)
+                with dpg.table_row():
+                    dpg.add_text("")
+                    dpg.add_button(label="Close", callback=lambda: dpg.delete_item(modal_tag))
+                    dpg.add_text("")
 
     def _on_visit_github(self):
         """Open the GitHub repository in the browser."""

@@ -2,7 +2,7 @@
 ; SEE THE DOCUMENTATION FOR DETAILS ON CREATING INNO SETUP SCRIPT FILES!
 
 #define MyAppName "TD Launcher Plus"
-#define MyAppVersion "2.0.4"
+#define MyAppVersion "2.0.5"
 #define MyAppPublisher "Dan Molnar ( Function Store )"
 #define MyAppURL "https://www.functionstore.xyz/link-in-bio"
 #define MyAppExeName "td_launcher_plus.exe"
