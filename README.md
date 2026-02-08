@@ -18,8 +18,8 @@ This repo is based on [TD Launcher by EnviralDesign](https://github.com/envirald
 - **TouchPlayer Support**: Launch projects in TouchPlayer instead of TouchDesigner with a single toggle.
 - **Missing File Detection**: Files that no longer exist on disk are grayed out and labeled "(missing)" — with a one-click cleanup in Settings.
 - **In-App Help**: Built-in help modal (**Help** button) with keyboard shortcut reference and utility TOX info.
-- **Native Recent Files**: Automatically reads your TouchDesigner recent files from the OS (Windows Registry / macOS Shared File List) — no setup needed.
-- **Icon Utility**: Optional companion component for TouchDesigner to auto-generate project thumbnails.
+- **Native Recent Files**: On Windows, reads recent files directly from the Registry. On macOS, use the companion utility TOX to sync recents.
+- **Companion Utility TOX**: Syncs recent files on macOS and auto-generates project thumbnails on all platforms.
 
 ---
 
@@ -65,11 +65,12 @@ Launching the app directly opens the project dashboard. Here you can browse your
 ### Alternative Usage
 You can also drag and drop `.toe` files directly onto the TD Launcher Plus app icon.
 
-### TouchDesigner Utility Component (Optional)
-A companion TouchDesigner component (`TDLauncherPlusUtility.tox`) is included that integrates with TD Launcher Plus. Add this to your default startup file for automatic project icon generation.
+### TouchDesigner Utility Component
+A companion TouchDesigner component (`TDLauncherPlusUtility.tox`) is included that integrates with TD Launcher Plus. Add this to your default startup file.
 
 **Why use it?**
-TD Launcher Plus already reads your recent files directly from the OS (see [Recent Files](#recent-files)), so the utility is **not required** for recent files to appear. Its main purpose is **automatic icon generation** — taking a snapshot of your `/perform` window each time you save, so your projects get visual thumbnails in the launcher.
+- **macOS (required for recents):** Due to macOS sandboxing restrictions, the packaged app cannot read TouchDesigner's native recent files. The utility syncs your recent files to the launcher's config so they appear in the Recent Files tab. It also auto-generates project icons.
+- **Windows (optional):** Recent files are read directly from the Windows Registry — no utility needed. The utility's main purpose on Windows is **automatic icon generation** — taking a snapshot of your `/perform` window each time you save, so your projects get visual thumbnails in the launcher.
 
 **Features:**
 - **Auto-generate icons:** Takes a snapshot of the `/perform` window each time the project is saved, creating `icon_temp.png` for the project thumbnail
@@ -126,11 +127,9 @@ TD Launcher Plus analyzes each `.toe` file to determine which TouchDesigner vers
 ### Recent Files
 TD Launcher Plus keeps track of recently opened projects. Files are added to the Recent Files list only when actually launched (via button, double-click, countdown, or Enter) — not when simply browsing. Browsed files still appear in the UI for the current session. You can also click **"Browse..."** to open a file picker and add a `.toe` file directly.
 
-**Native Recent Files Discovery:** TD Launcher Plus automatically reads TouchDesigner's native recent files directly from the OS — no companion utility needed:
-- **Windows:** Reads from the Windows Registry (`HKCU\Software\Derivative\recent files`)
-- **macOS:** Reads from the macOS Shared File List (`.sfl4` bookmark data)
-
-This means any file you open in TouchDesigner will automatically appear in TD Launcher Plus, even without the companion utility TOX.
+**Native Recent Files Discovery:**
+- **Windows:** Reads recent files directly from the Windows Registry (`HKCU\Software\Derivative\recent files`) — no setup needed. Any file you open in TouchDesigner will automatically appear in TD Launcher Plus.
+- **macOS:** Due to macOS sandboxing restrictions, the packaged app cannot read TouchDesigner's native recent files. Install the **[TDLauncherPlusUtility.tox](#touchdesigner-utility-component-recommended-on-macos)** companion component in your startup `.toe` to sync recent files from TouchDesigner.
 
 **Color Coding:**
 - **Vibrant Green:** **Active Session** — The file you currently have selected or just launched.

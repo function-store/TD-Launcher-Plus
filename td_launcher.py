@@ -2964,12 +2964,20 @@ class LauncherApp:
                         dpg.add_theme_color(dpg.mvThemeCol_Text, [100, 180, 255, 255])
                 dpg.bind_item_theme(link_btn, link_theme)
                 dpg.add_text("and add it to", color=[180, 180, 180, 255])
-            dpg.add_text(
-                "  your startup .toe file. It syncs recent files and\n"
-                "  auto-generates project icons for files saved\n"
-                "  directly in TouchDesigner of `/perform` window!",
-                color=[180, 180, 180, 255]
-            )
+            if platform.system() == 'Darwin':
+                dpg.add_text(
+                    "  your startup .toe file. It syncs recent files\n"
+                    "  and auto-generates project icons for files saved\n"
+                    "  directly in TouchDesigner or `/perform` window.",
+                    color=[180, 180, 180, 255]
+                )
+            else:
+                dpg.add_text(
+                    "  your startup .toe file. It auto-generates project\n"
+                    "  icons for files saved directly in TouchDesigner\n"
+                    "  or `/perform` window.",
+                    color=[180, 180, 180, 255]
+                )
 
             dpg.add_spacer(height=12)
             with dpg.table(header_row=False, width=-1):
@@ -3237,11 +3245,18 @@ class LauncherApp:
 
             # --- Tips ---
             dpg.add_spacer(height=8)
-            dpg.add_text(
-                "Recent files are read directly from the OS\n"
-                "(Registry on Windows, Shared File List on macOS).",
-                color=[180, 180, 180, 255]
-            )
+            if platform.system() == 'Darwin':
+                dpg.add_text(
+                    "On macOS, the companion utility TOX is needed\n"
+                    "to sync recent files from TouchDesigner.",
+                    color=[180, 180, 180, 255]
+                )
+            else:
+                dpg.add_text(
+                    "Recent files are read directly from the\n"
+                    "Windows Registry — no setup needed.",
+                    color=[180, 180, 180, 255]
+                )
             dpg.add_spacer(height=2)
             dpg.add_text(
                 "Use TouchPlayer checkbox in the version panel\n"
@@ -3251,13 +3266,22 @@ class LauncherApp:
 
             # --- Utility TOX ---
             dpg.add_spacer(height=8)
-            dpg.add_text("Companion Utility TOX (optional)", color=[255, 200, 50, 255])
-            dpg.add_spacer(height=4)
-            dpg.add_text(
-                "Auto-generates project icons from the /perform\n"
-                "window when you save. Not needed for recent files.",
-                color=[180, 180, 180, 255]
-            )
+            if platform.system() == 'Darwin':
+                dpg.add_text("Companion Utility TOX (recommended)", color=[255, 200, 50, 255])
+                dpg.add_spacer(height=4)
+                dpg.add_text(
+                    "Syncs recent files from TouchDesigner and\n"
+                    "auto-generates project icons from /perform.",
+                    color=[180, 180, 180, 255]
+                )
+            else:
+                dpg.add_text("Companion Utility TOX (optional)", color=[255, 200, 50, 255])
+                dpg.add_spacer(height=4)
+                dpg.add_text(
+                    "Auto-generates project icons from /perform\n"
+                    "when you save. Not needed for recent files.",
+                    color=[180, 180, 180, 255]
+                )
             dpg.add_spacer(height=4)
             with dpg.group(horizontal=True):
                 dpg.add_text("  Get", color=[180, 180, 180, 255])

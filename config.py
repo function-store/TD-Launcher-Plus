@@ -376,10 +376,19 @@ class Config:
             return launcher_recents
 
         # Read TD recents from native source (registry on Windows, .sfl4 on macOS)
+        # On macOS, also merge config-based td_recents (written by the utility TOX)
+        # since .sfl4 access requires Full Disk Access which packaged apps lack.
         if platform.system() == 'Windows':
             td_recents = self._read_windows_td_recents()
         elif platform.system() == 'Darwin':
             td_recents = self._read_mac_td_recents()
+            # Merge config-based td_recents from the utility TOX
+            config_td = self._config.get('td_recents', [])
+            sfl_paths = {self._get_path_from_entry(e) for e in td_recents}
+            for path in config_td:
+                p = path if isinstance(path, str) else self._get_path_from_entry(path)
+                if p and p not in sfl_paths:
+                    td_recents.append({'path': p, 'source': 'td'})
         else:
             td_recents = self._config.get('td_recents', [])
         
