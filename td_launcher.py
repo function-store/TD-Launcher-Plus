@@ -1607,8 +1607,11 @@ class LauncherApp:
                             dpg.set_value("download_filter", 'a')
                         else:
                             dpg.set_value("download_filter", 'c')
+                        download_label = self.build_info
+                        if self.use_touchplayer and download_label:
+                            download_label = download_label.replace('TouchDesigner.', 'TouchPlayer.', 1)
                         dpg.add_button(
-                            label=f'Download: {self.build_info}',
+                            label=f'Download: {download_label}',
                             width=-1,
                             callback=self._on_download,
                             filter_key="a"
@@ -1633,8 +1636,11 @@ class LauncherApp:
 
             with dpg.filter_set(id="install_filter"):
                 dpg.set_value("install_filter", 'z')
+                install_label = self.build_info
+                if self.use_touchplayer and install_label:
+                    install_label = install_label.replace('TouchDesigner.', 'TouchPlayer.', 1)
                 dpg.add_button(
-                    label=f'Install: {self.build_info}',
+                    label=f'Install: {install_label}',
                     width=-1,
                     enabled=True,
                     filter_key="a",
@@ -2703,6 +2709,18 @@ class LauncherApp:
 
     def _on_download(self, sender, app_data):
         """Handle download button click."""
+        # Regenerate URL for the correct product (TouchPlayer vs TouchDesigner)
+        if self.build_info:
+            download_build = self.build_info
+            if self.use_touchplayer:
+                download_build = download_build.replace('TouchDesigner.', 'TouchPlayer.', 1)
+            self.td_url = self.td_manager.generate_download_url(download_build)
+            if self.td_url:
+                td_filename = self.td_url.split("/")[-1]
+                toe_dir = os.path.dirname(os.path.abspath(self.selected_file)) if self.selected_file else ""
+                self.td_uri = os.path.join(toe_dir, td_filename) if toe_dir else None
+                self.td_filename = td_filename
+
         if not self.td_url or not self.td_uri:
             return
 
