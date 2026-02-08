@@ -102,7 +102,9 @@ class LauncherApp:
 
         # Install monitoring state
         self.install_pending_version: Optional[str] = None
+        self.install_pending_player_mode: bool = False
         self.install_check_time: float = 0
+        self.install_start_time: float = 0
 
         # Readme state
         self.current_readme_path: Optional[str] = None
@@ -2801,30 +2803,48 @@ class LauncherApp:
             # Start monitoring for installation completion
             if self.build_info:
                 self.install_pending_version = self.build_info
+                self.install_pending_player_mode = self.use_touchplayer
+                self.install_start_time = time.time()
                 self.install_check_time = time.time()
-                logger.info(f"Monitoring registry for {self.build_info} installation...")
+                logger.info(f"Monitoring for {self.display_build_info} installation...")
         except Exception as e:
             logger.error(f"Install failed: {e}")
 
     def _check_install_complete(self):
-        """Poll registry to check if pending installation has completed."""
+        """Poll to check if pending installation has completed."""
         if not self.install_pending_version:
             return
 
-        # Check every 3 seconds
         now = time.time()
+
+        # Give up after 10 minutes
+        if now - self.install_start_time > 600:
+            logger.info("Install monitoring timed out after 10 minutes")
+            self.install_pending_version = None
+            return
+
+        # Check every 3 seconds
         if now - self.install_check_time < 3.0:
             return
         self.install_check_time = now
 
-        # Re-scan registry for new versions
+        # Re-scan for new versions
         self.td_manager.discover_versions()
-        if self.td_manager.is_version_installed(self.install_pending_version):
+
+        # Check using the right method based on mode when install started
+        if self.install_pending_player_mode:
+            installed = self.td_manager.is_player_installed(self.install_pending_version)
+        else:
+            installed = self.td_manager.is_version_installed(self.install_pending_version)
+
+        if installed:
             logger.info(f"{self.install_pending_version} installed successfully")
             installed_uri = self.td_uri
             self.install_pending_version = None
             # Refresh the version panel to reflect the new installation
             self._update_version_panel(skip_analysis=True)
+            # Don't auto-start countdown — let user review and handle installer prompt
+            self.countdown_enabled = False
             # Offer to delete the installer file
             if installed_uri and os.path.exists(installed_uri):
                 self._show_delete_installer_modal(installed_uri)
