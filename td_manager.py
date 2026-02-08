@@ -18,20 +18,42 @@ class TDManager:
 
     def __init__(self):
         self.versions: Dict[str, dict] = {}
+        self.player_versions: Dict[str, dict] = {}
         self.discover_versions()
 
     def discover_versions(self) -> Dict[str, dict]:
-        """Discover installed TouchDesigner versions."""
+        """Discover installed TouchDesigner and TouchPlayer versions."""
         if platform.system() == 'Windows':
-            self.versions = self._query_windows_registry()
+            self.versions = self._query_windows_registry("TouchDesigner")
+            # On Windows TouchPlayer.exe lives next to TouchDesigner.exe
+            self.player_versions = self._derive_windows_player_versions()
         else:
-            self.versions = self._query_mac_applications()
+            self.versions = self._query_mac_applications("TouchDesigner")
+            self.player_versions = self._query_mac_applications("TouchPlayer")
         return self.versions
 
-    def _query_windows_registry(self) -> Dict[str, dict]:
-        """Query Windows registry for TouchDesigner installations.
+    def _derive_windows_player_versions(self) -> Dict[str, dict]:
+        """Derive TouchPlayer versions from existing TD installations on Windows.
+        TouchPlayer.exe sits alongside TouchDesigner.exe in each install's bin/ folder.
+        """
+        player_dict = {}
+        for td_key, info in self.versions.items():
+            install_path = info.get('install_path', '')
+            player_exe = os.path.join(install_path, "bin", "TouchPlayer.exe")
+            if os.path.exists(player_exe):
+                # Convert key from TouchDesigner.X.Y to TouchPlayer.X.Y
+                numeric = td_key.split('.', 1)[1] if '.' in td_key else td_key
+                player_key = f"TouchPlayer.{numeric}"
+                player_dict[player_key] = {
+                    'install_path': install_path,
+                    'executable': player_exe
+                }
+        return player_dict
 
-        Registry layout: HKLM\\SOFTWARE\\Derivative\\TouchDesigner
+    def _query_windows_registry(self, product: str = "TouchDesigner") -> Dict[str, dict]:
+        """Query Windows registry for TouchDesigner or TouchPlayer installations.
+
+        Registry layout: HKLM\\SOFTWARE\\Derivative\\<product>
         Values are version numbers (e.g. '2025.32280') and corresponding
         paths stored as 'Path', 'Path_3', 'Path_6', etc.
         """
@@ -45,7 +67,7 @@ class TDManager:
         try:
             key = winreg.OpenKey(
                 winreg.HKEY_LOCAL_MACHINE,
-                r"SOFTWARE\Derivative\TouchDesigner"
+                rf"SOFTWARE\Derivative\{product}"
             )
 
             num_values = winreg.QueryInfoKey(key)[1]
@@ -70,9 +92,9 @@ class TDManager:
                         break
 
                 if install_path:
-                    exe_path = os.path.join(install_path, "bin", "TouchDesigner.exe")
+                    exe_path = os.path.join(install_path, "bin", f"{product}.exe")
                     if os.path.exists(exe_path):
-                        td_key = f"TouchDesigner.{version}"
+                        td_key = f"{product}.{version}"
                         td_dict[td_key] = {
                             'install_path': install_path,
                             'executable': exe_path
@@ -85,19 +107,18 @@ class TDManager:
 
         return td_dict
 
-    def _query_mac_applications(self) -> Dict[str, dict]:
-        """Query macOS Applications folder for TouchDesigner installations.
+    def _query_mac_applications(self, product: str = "TouchDesigner") -> Dict[str, dict]:
+        """Query macOS Applications folder for TouchDesigner or TouchPlayer installations.
 
         Reads Info.plist to get actual version info.
         """
         td_dict = {}
         applications_dir = "/Applications"
 
-        # Look for TouchDesigner applications
-        td_pattern = os.path.join(applications_dir, "TouchDesigner*")
+        td_pattern = os.path.join(applications_dir, f"{product}*")
         logger.debug(f"Searching pattern: {td_pattern}")
         td_apps = glob.glob(td_pattern)
-        logger.debug(f"Found {len(td_apps)} potential TouchDesigner apps")
+        logger.debug(f"Found {len(td_apps)} potential {product} apps")
 
         for app_path in td_apps:
             if not app_path.endswith('.app'):
@@ -117,21 +138,20 @@ class TDManager:
                 logger.debug(f"Bundle version: {bundle_version}")
 
                 if bundle_version:
-                    # Create a key in the format TouchDesigner.YEAR.BUILD
                     version_parts = bundle_version.split('.')
                     if len(version_parts) >= 2:
                         year = version_parts[0]
                         build = version_parts[1] if len(version_parts) > 1 else "0"
-                        td_key = f"TouchDesigner.{year}.{build}"
+                        td_key = f"{product}.{year}.{build}"
 
-                        executable_path = os.path.join(app_path, "Contents", "MacOS", "TouchDesigner")
+                        executable_path = os.path.join(app_path, "Contents", "MacOS", product)
 
                         td_dict[td_key] = {
                             'executable': executable_path,
                             'app_path': app_path,
                             'bundle_version': bundle_version
                         }
-                        logger.debug(f"Found TouchDesigner: {td_key} at {executable_path}")
+                        logger.debug(f"Found {product}: {td_key} at {executable_path}")
                     else:
                         logger.warning(f"Could not parse version from {bundle_version}")
                 else:
@@ -144,20 +164,24 @@ class TDManager:
 
     @staticmethod
     def parse_version_string(version_str: str) -> Tuple[int, int]:
-        """Parse TouchDesigner version string into (year, build) tuple.
-        Handles 'TouchDesigner.2025.32280' or just '2025.32280'.
+        """Parse version string into (year, build) tuple.
+        Handles 'TouchDesigner.2025.32280', 'TouchPlayer.2025.32280', or just '2025.32280'.
         """
         try:
-            # Remove prefix if present
-            if version_str.startswith('TouchDesigner.'):
-                version_str = version_str[len('TouchDesigner.'):]
-            
+            # Remove product prefix if present
+            for prefix in ('TouchDesigner.', 'TouchPlayer.'):
+                if version_str.startswith(prefix):
+                    version_str = version_str[len(prefix):]
+                    break
+
             parts = version_str.split('.')
             year = int(parts[0]) if len(parts) > 0 else -1
             build = int(parts[1]) if len(parts) > 1 else -1
             return (year, build)
         except Exception:
             return (-1, -1)
+
+    # --- TouchDesigner accessors ---
 
     def get_sorted_version_keys(self) -> list:
         """Get version keys sorted by year and build number."""
@@ -177,6 +201,31 @@ class TDManager:
         """Get the .app bundle path for a version on macOS."""
         if version in self.versions:
             return self.versions[version].get('app_path')
+        return None
+
+    # --- TouchPlayer accessors ---
+
+    def get_sorted_player_keys(self) -> list:
+        """Get player version keys sorted by year and build number."""
+        return sorted(list(self.player_versions.keys()), key=self.parse_version_string)
+
+    def is_player_installed(self, version: str) -> bool:
+        """Check if a matching TouchPlayer version is installed.
+        Accepts either 'TouchDesigner.X.Y' or 'TouchPlayer.X.Y' — matches by numeric part.
+        """
+        target = self.parse_version_string(version)
+        return any(self.parse_version_string(k) == target for k in self.player_versions)
+
+    def get_player_executable(self, version: str) -> Optional[str]:
+        """Get the TouchPlayer executable path for a version."""
+        if version in self.player_versions:
+            return self.player_versions[version].get('executable')
+        return None
+
+    def get_player_app_path(self, version: str) -> Optional[str]:
+        """Get the TouchPlayer .app bundle path for a version on macOS."""
+        if version in self.player_versions:
+            return self.player_versions[version].get('app_path')
         return None
 
     def get_toeexpand_path(self) -> Optional[str]:

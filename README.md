@@ -14,6 +14,8 @@ This repo is based on [TD Launcher by EnviralDesign](https://github.com/envirald
 - **Visual Previews**: Automatic thumbnail generation and custom icon support for a rich browsing experience.
 - **Keyboard Navigation**: Full keyboard navigation with tab memory for fast and fluid workflow.
 - **Native Experience**: Fully optimized for macOS (Apple Silicon/Intel) and Windows with a clean, responsive Dear PyGui interface.
+- **TouchPlayer Support**: Launch projects in TouchPlayer instead of TouchDesigner with a single toggle.
+- **In-App Help**: Built-in help modal (**Help** button) with keyboard shortcut reference and utility TOX info.
 - **Sync Utility**: Companion component for TouchDesigner to keep your history updated and icons generated.
 
 ---
@@ -90,6 +92,8 @@ Without this utility, only files launched through TD Launcher Plus appear in the
 **Interface Toggles**
 - **C**: Toggle **"Show Icons"**
 - **E**: Toggle **"Show Info"** (README) panel
+- **R**: Toggle **"Use TouchPlayer"** (launch in TouchPlayer instead of TouchDesigner)
+- **F**: **Open folder** of the selected file in Finder / Explorer
 - **Cmd + E** (Mac) / **Ctrl + E** (Win): Activate **Edit Mode** and focus text editor for immediate typing
 
 **File Management**

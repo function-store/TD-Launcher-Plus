@@ -109,6 +109,8 @@ class LauncherApp:
         self.readme_edit_buffer: str = ""
         self.last_readme_click_time: float = 0
 
+        self.use_touchplayer: bool = False
+
         # Version analysis cache (path -> build_info)
         self.version_cache: dict = {}
 
@@ -261,7 +263,9 @@ class LauncherApp:
         # Set countdown state
         if self.picker_mode:
             self.countdown_enabled = False
-        elif self.build_info and not self.td_manager.is_version_installed(self.build_info):
+        elif self.build_info and not (self.td_manager.is_player_installed(self.build_info)
+                                       if self.use_touchplayer
+                                       else self.td_manager.is_version_installed(self.build_info)):
             self.countdown_enabled = False
         else:
             self.countdown_enabled = True
@@ -447,6 +451,12 @@ class LauncherApp:
             
             dpg.add_separator()
             
+            # Theme for version container when TouchPlayer is selected
+            if not dpg.does_item_exist("touchplayer_bg_theme"):
+                with dpg.theme(tag="touchplayer_bg_theme"):
+                    with dpg.theme_component(dpg.mvChildWindow):
+                        dpg.add_theme_color(dpg.mvThemeCol_ChildBg, [30, 50, 80, 100], category=dpg.mvThemeCat_Core)
+
             # Create global theme for launcher-sourced recent items (Green)
             if not dpg.does_item_exist("launcher_item_theme"):
                 with dpg.theme(tag="launcher_item_theme"):
@@ -1219,13 +1229,22 @@ class LauncherApp:
 
         # Handle "Default" template (launch TD without a file)
         if self.selected_file == DEFAULT_TEMPLATE:
-            dpg.add_text(
-                "Launch TouchDesigner with default startup",
-                parent="version_panel",
-                color=[150, 200, 255, 255]
-            )
+            product = "TouchPlayer" if self.use_touchplayer else "TouchDesigner"
+            with dpg.table(header_row=False, policy=dpg.mvTable_SizingFixedFit,
+                           width=-1, parent="version_panel"):
+                dpg.add_table_column(width_stretch=True)
+                dpg.add_table_column(width_fixed=True)
+                with dpg.table_row():
+                    dpg.add_text(
+                        f"Launch {product} with default startup",
+                        color=[150, 200, 255, 255]
+                    )
+                    dpg.add_checkbox(label="Use TouchPlayer", tag="use_touchplayer_checkbox",
+                                     default_value=self.use_touchplayer,
+                                     callback=self._on_toggle_touchplayer)
             dpg.add_separator(parent="version_panel")
-            version_keys = self.td_manager.get_sorted_version_keys()
+            version_keys = (self.td_manager.get_sorted_player_keys() if self.use_touchplayer
+                            else self.td_manager.get_sorted_version_keys())
             if version_keys:
                 with dpg.child_window(height=240, width=-1, parent="version_panel", tag=self._new_version_container_id()):
                     dpg.add_radio_button(
@@ -1235,11 +1254,13 @@ class LauncherApp:
                         horizontal=False,
                         callback=self._on_version_selected
                     )
+                if self.use_touchplayer and dpg.does_item_exist("touchplayer_bg_theme"):
+                    dpg.bind_item_theme(self._td_version_container_id, "touchplayer_bg_theme")
                 if dpg.does_item_exist("launch_button"):
                     dpg.configure_item("launch_button", enabled=True)
-                    dpg.configure_item("launch_button", label="Launch TouchDesigner")
+                    dpg.configure_item("launch_button", label=f"Launch {product}")
             else:
-                dpg.add_text("No TouchDesigner versions found!", parent="version_panel", color=[255, 50, 0, 255])
+                dpg.add_text(f"No {product} versions found!", parent="version_panel", color=[255, 50, 0, 255])
                 if dpg.does_item_exist("launch_button"):
                     dpg.configure_item("launch_button", enabled=False)
             self.countdown_enabled = False
@@ -1287,9 +1308,10 @@ class LauncherApp:
             dpg.add_separator(parent="version_panel")
 
             # Still show version selection
-            version_keys = self.td_manager.get_sorted_version_keys()
+            version_keys = (self.td_manager.get_sorted_player_keys() if self.use_touchplayer
+                            else self.td_manager.get_sorted_version_keys())
+            product = "TouchPlayer" if self.use_touchplayer else "TouchDesigner"
             if version_keys:
-                # Default taller height (180) when no missing version warning is present
                 with dpg.child_window(height=240, width=-1, parent="version_panel", tag=self._new_version_container_id()):
                     dpg.add_radio_button(
                         version_keys,
@@ -1298,13 +1320,15 @@ class LauncherApp:
                         horizontal=False,
                         callback=self._on_version_selected
                     )
+                if self.use_touchplayer and dpg.does_item_exist("touchplayer_bg_theme"):
+                    dpg.bind_item_theme(self._td_version_container_id, "touchplayer_bg_theme")
                 if dpg.does_item_exist("launch_button"):
                     filename = os.path.basename(self.selected_file)
                     dpg.configure_item("launch_button", enabled=True)
                     dpg.configure_item("launch_button", label=f"Launch {filename}")
             else:
                 dpg.add_text(
-                    "No TouchDesigner versions found!",
+                    f"No {product} versions found!",
                     parent="version_panel",
                     color=[255, 50, 0, 255]
                 )
@@ -1316,64 +1340,69 @@ class LauncherApp:
             return
 
         filename = os.path.basename(self.selected_file)
-        dpg.add_text(f'File: {filename}', parent="version_panel", color=[50, 255, 0, 255])
+        max_chars = 75
+        display_name = (filename[:max_chars - 1] + '\u2026') if len(filename) > max_chars else filename
+        dpg.add_text(f'File: {display_name}', parent="version_panel", color=[50, 255, 0, 255])
 
-        version_installed = self.td_manager.is_version_installed(self.build_info)
+        if self.use_touchplayer:
+            version_installed = self.td_manager.is_player_installed(self.build_info)
+        else:
+            version_installed = self.td_manager.is_version_installed(self.build_info)
 
         if not version_installed:
-            dpg.add_text(
-                f'Required: {self.build_info} (NOT INSTALLED)',
-                parent="version_panel",
-                color=[255, 50, 0, 255]
-            )
+            with dpg.table(header_row=False, policy=dpg.mvTable_SizingFixedFit,
+                           width=-1, parent="version_panel"):
+                dpg.add_table_column(width_stretch=True)
+                dpg.add_table_column(width_fixed=True)
+                with dpg.table_row():
+                    dpg.add_text(
+                        f'Required: {self.build_info} (NOT INSTALLED)',
+                        color=[255, 50, 0, 255]
+                    )
+                    dpg.add_checkbox(label="Use TouchPlayer", tag="use_touchplayer_checkbox",
+                                     default_value=self.use_touchplayer,
+                                     callback=self._on_toggle_touchplayer)
             self._build_download_controls()
             self.countdown_enabled = False
         else:
-            dpg.add_text(
-                f'Required: {self.build_info} (installed)',
-                parent="version_panel",
-                color=[50, 255, 0, 255]
-            )
+            with dpg.table(header_row=False, policy=dpg.mvTable_SizingFixedFit,
+                           width=-1, parent="version_panel"):
+                dpg.add_table_column(width_stretch=True)
+                dpg.add_table_column(width_fixed=True)
+                with dpg.table_row():
+                    dpg.add_text(
+                        f'Required: {self.build_info} (installed)',
+                        color=[50, 255, 0, 255]
+                    )
+                    dpg.add_checkbox(label="Use TouchPlayer", tag="use_touchplayer_checkbox",
+                                     default_value=self.use_touchplayer,
+                                     callback=self._on_toggle_touchplayer)
             # Maintain current countdown state instead of forcing True
 
         dpg.add_separator(parent="version_panel")
 
-        # Version selection
-        version_keys = self.td_manager.get_sorted_version_keys()
-        
-        default_version = None
-        if version_keys:
-            # Templates always default to the latest version
-            if self._get_current_tab() == 'templates':
-                default_version = version_keys[-1]
-            elif self.build_info in version_keys:
-                default_version = self.build_info
-            else:
-                # Match missing - find closest older version
-                target_v = self.td_manager.parse_version_string(self.build_info)
-                # version_keys is sorted ascending (earliest to latest)
-                # Fallback to oldest installed if all are newer
-                default_version = version_keys[0]
+        # Version selection — use player or designer keys based on toggle
+        version_keys = (self.td_manager.get_sorted_player_keys() if self.use_touchplayer
+                        else self.td_manager.get_sorted_version_keys())
 
-                for v_key in version_keys:
-                    current_v = self.td_manager.parse_version_string(v_key)
-                    if current_v <= target_v:
-                        default_version = v_key
-                    else:
-                        # version_keys is sorted, so we can stop once we exceed target
-                        break
+        default_version = self._find_best_version(version_keys, self.build_info)
 
-
-        # Dynamic height based on download button presence (Installed: 180, Missing: 100)
+        # Dynamic height based on download button presence
         container_height = 190 if version_installed else 163
-        with dpg.child_window(height=container_height, width=-1, parent="version_panel", tag=self._new_version_container_id()):
-            dpg.add_radio_button(
-                version_keys,
-                default_value=default_version,
-                tag=self._new_version_id(),
-                horizontal=False,
-                callback=self._on_version_selected
-            )
+        product = "TouchPlayer" if self.use_touchplayer else "TouchDesigner"
+        if version_keys:
+            with dpg.child_window(height=container_height, width=-1, parent="version_panel", tag=self._new_version_container_id()):
+                dpg.add_radio_button(
+                    version_keys,
+                    default_value=default_version,
+                    tag=self._new_version_id(),
+                    horizontal=False,
+                    callback=self._on_version_selected
+                )
+            if self.use_touchplayer and dpg.does_item_exist("touchplayer_bg_theme"):
+                dpg.bind_item_theme(self._td_version_container_id, "touchplayer_bg_theme")
+        else:
+            dpg.add_text(f"No {product} versions found!", parent="version_panel", color=[255, 50, 0, 255])
 
         # Update launch button
         if dpg.does_item_exist("launch_button"):
@@ -1401,6 +1430,32 @@ class LauncherApp:
         if dpg.does_item_exist("file_picker_tabs"):
             dpg.focus_item("file_picker_tabs") # Steal DPG focus back
         # Can add logic here if we want to preview version changes
+
+    def _find_best_version(self, version_keys: list, build_info: str) -> str | None:
+        """Find the best matching version from version_keys for a given build_info.
+        Returns exact match if found, otherwise the closest older version.
+        """
+        if not version_keys:
+            return None
+        if self._get_current_tab() == 'templates':
+            return version_keys[-1]
+
+        target_v = self.td_manager.parse_version_string(build_info)
+
+        # Check for exact numeric match (handles cross-prefix like TD build_info vs TP keys)
+        for v_key in version_keys:
+            if self.td_manager.parse_version_string(v_key) == target_v:
+                return v_key
+
+        # No exact match — find closest older version
+        default_version = version_keys[0]
+        for v_key in version_keys:
+            current_v = self.td_manager.parse_version_string(v_key)
+            if current_v <= target_v:
+                default_version = v_key
+            else:
+                break
+        return default_version
 
     def _rebuild_version_panel_ui(self):
         """Rebuild version panel UI without re-analyzing the file."""
@@ -1968,14 +2023,35 @@ class LauncherApp:
             self._on_toggle_icons(None, new_state)
             return
 
-        # 5. Ctrl+D / Cmd+D - Launch TD with default startup (no file)
+        # 4. R Key - Toggle TouchPlayer
+        if key_code == getattr(dpg, 'mvKey_R', -1) and not modifier_held:
+            new_state = not self.use_touchplayer
+            logger.debug(f"Shortcut: Toggling TouchPlayer to {new_state} via R")
+            self._on_toggle_touchplayer(None, new_state)
+            return
+
+        # 5. F Key - Open folder of selected file
+        if key_code == getattr(dpg, 'mvKey_F', -1) and not modifier_held:
+            if self.selected_file and self.selected_file != DEFAULT_TEMPLATE:
+                folder = os.path.dirname(os.path.abspath(self.selected_file))
+                if os.path.isdir(folder):
+                    logger.debug(f"Shortcut: Opening folder {folder} via F")
+                    if platform.system() == 'Darwin':
+                        subprocess.Popen(['open', folder])
+                    else:
+                        os.startfile(folder)
+            return
+
+        # 6. Ctrl+D / Cmd+D - Launch TD/TP with default startup (no file)
         if modifier_held and key_code == getattr(dpg, 'mvKey_D', -1):
-            version_keys = self.td_manager.get_sorted_version_keys()
+            version_keys = (self.td_manager.get_sorted_player_keys() if self.use_touchplayer
+                            else self.td_manager.get_sorted_version_keys())
+            product = "TouchPlayer" if self.use_touchplayer else "TouchDesigner"
             if not version_keys:
-                logger.warning("Quick Launch failed: No TouchDesigner versions discovered.")
+                logger.warning(f"Quick Launch failed: No {product} versions discovered.")
                 return
             newest_version = version_keys[-1]
-            logger.debug(f"Shortcut: Launching latest TD ({newest_version}) with default startup")
+            logger.debug(f"Shortcut: Launching latest {product} ({newest_version}) with default startup")
             self._launch_project(DEFAULT_TEMPLATE, newest_version, promote=False)
             return
 
@@ -1999,13 +2075,15 @@ class LauncherApp:
                 file_path = template if isinstance(template, str) else template.get('path', '')
                 
                 # Get newest version
-                version_keys = self.td_manager.get_sorted_version_keys()
+                version_keys = (self.td_manager.get_sorted_player_keys() if self.use_touchplayer
+                                else self.td_manager.get_sorted_version_keys())
+                product = "TouchPlayer" if self.use_touchplayer else "TouchDesigner"
                 if version_keys:
                     newest_version = version_keys[-1]
                     logger.debug(f"Shortcut: Launching template #{template_index + 1} ({file_path}) with {newest_version}")
                     self._launch_project(file_path, newest_version, promote=False)
                 else:
-                    logger.warning(f"Quick Launch #{template_index + 1} failed: No TouchDesigner versions discovered.")
+                    logger.warning(f"Quick Launch #{template_index + 1} failed: No {product} versions discovered.")
             else:
                 logger.debug(f"Template #{template_index + 1} does not exist (only {len(templates)} templates)")
             return
@@ -2296,6 +2374,12 @@ class LauncherApp:
         self._build_templates_list()
         self._restore_selection_highlight()
 
+    def _on_toggle_touchplayer(self, sender, app_data):
+        """Handle TouchPlayer toggle — rebuilds version panel to show player/designer versions."""
+        self.use_touchplayer = app_data
+        # Rebuild the entire version panel so the version list swaps
+        self._rebuild_version_panel_ui()
+
     def _on_toggle_icons(self, sender, app_data):
         """Handle show icons toggle."""
         self.config.show_icons = app_data
@@ -2370,16 +2454,23 @@ class LauncherApp:
             self.active_manual_file = file_path  # Set as session active
             self._build_recent_files_list()
 
-        executable = self.td_manager.get_executable(version)
+        if self.use_touchplayer:
+            executable = self.td_manager.get_player_executable(version)
+            app_path = self.td_manager.get_player_app_path(version) if platform.system() == 'Darwin' else None
+        else:
+            executable = self.td_manager.get_executable(version)
+            app_path = self.td_manager.get_app_path(version) if platform.system() == 'Darwin' else None
+
         if not executable:
-            logger.error(f"Could not find executable for version {version}")
+            app_label = 'TouchPlayer' if self.use_touchplayer else 'TouchDesigner'
+            logger.error(f"Could not find {app_label} executable for version {version}")
             return
 
-        logger.info(f"Launching {'TouchDesigner (default)' if is_default else file_path} with {version}")
+        app_label = 'TouchPlayer' if self.use_touchplayer else 'TouchDesigner'
+        logger.info(f"Launching {'%s (default)' % app_label if is_default else file_path} with {version}")
 
         try:
             if platform.system() == 'Darwin':
-                app_path = self.td_manager.get_app_path(version)
                 if is_default:
                     subprocess.Popen(['open', '-a', app_path] if app_path else [executable])
                 elif app_path:
@@ -2769,7 +2860,7 @@ class LauncherApp:
         viewport_width = dpg.get_viewport_width()
         viewport_height = dpg.get_viewport_height()
         modal_width = 420
-        modal_height = 520
+        modal_height = 560
 
         with dpg.window(
             label="Help",
@@ -2798,6 +2889,8 @@ class LauncherApp:
                 ]),
                 ("Interface", [
                     ("C", "Toggle icons"),
+                    ("R", "Toggle TouchPlayer"),
+                    ("F", "Open file's folder"),
                     ("E", "Toggle info panel"),
                     (f"{mod}+E", "Edit README"),
                 ]),
@@ -2829,8 +2922,16 @@ class LauncherApp:
                             dpg.add_text(key, color=[255, 255, 200, 255])
                             dpg.add_text(action)
 
+            # --- Tips ---
+            dpg.add_spacer(height=8)
+            dpg.add_text(
+                "Use TouchPlayer checkbox in the version panel\n"
+                "to launch projects in TouchPlayer instead.",
+                color=[180, 180, 180, 255]
+            )
+
             # --- Utility TOX ---
-            dpg.add_spacer(height=12)
+            dpg.add_spacer(height=8)
             dpg.add_text("Companion Utility TOX", color=[255, 200, 50, 255])
             dpg.add_spacer(height=4)
             dpg.add_text(
@@ -3109,8 +3210,9 @@ class LauncherApp:
         """Move version selection up or down."""
         if not self._td_version_id and dpg.does_item_exist(self._td_version_id):
             return
-            
-        version_keys = self.td_manager.get_sorted_version_keys()
+
+        version_keys = (self.td_manager.get_sorted_player_keys() if self.use_touchplayer
+                        else self.td_manager.get_sorted_version_keys())
         if not version_keys:
             return
             

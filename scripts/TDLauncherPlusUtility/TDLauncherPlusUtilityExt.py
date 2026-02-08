@@ -46,6 +46,8 @@ class TDLauncherPlusUtilityExt:
 		Overwrite the 'recent_files' list in the config.
 		recents: List of dicts [{'path': str, 'last_opened': float}]
 		"""
+		### Handled by discovery of recent list in OS registry
+		return
 		recents = app.recentFiles
 		debug(f'Recents: {recents}')
 		path = self.getConfigPath()
