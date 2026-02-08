@@ -1431,7 +1431,7 @@ class LauncherApp:
             dpg.focus_item("file_picker_tabs") # Steal DPG focus back
         # Can add logic here if we want to preview version changes
 
-    def _find_best_version(self, version_keys: list, build_info: str) -> str | None:
+    def _find_best_version(self, version_keys: list, build_info: str) -> Optional[str]:
         """Find the best matching version from version_keys for a given build_info.
         Returns exact match if found, otherwise the closest older version.
         """
@@ -2925,6 +2925,12 @@ class LauncherApp:
             # --- Tips ---
             dpg.add_spacer(height=8)
             dpg.add_text(
+                "Recent files are read directly from the OS\n"
+                "(Registry on Windows, Shared File List on macOS).",
+                color=[180, 180, 180, 255]
+            )
+            dpg.add_spacer(height=2)
+            dpg.add_text(
                 "Use TouchPlayer checkbox in the version panel\n"
                 "to launch projects in TouchPlayer instead.",
                 color=[180, 180, 180, 255]
@@ -2932,11 +2938,11 @@ class LauncherApp:
 
             # --- Utility TOX ---
             dpg.add_spacer(height=8)
-            dpg.add_text("Companion Utility TOX", color=[255, 200, 50, 255])
+            dpg.add_text("Companion Utility TOX (optional)", color=[255, 200, 50, 255])
             dpg.add_spacer(height=4)
             dpg.add_text(
-                "Syncs recent files and auto-generates project\n"
-                "icons from the /perform window when you save.",
+                "Auto-generates project icons from the /perform\n"
+                "window when you save. Not needed for recent files.",
                 color=[180, 180, 180, 255]
             )
             dpg.add_spacer(height=4)

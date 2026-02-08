@@ -16,7 +16,8 @@ This repo is based on [TD Launcher by EnviralDesign](https://github.com/envirald
 - **Native Experience**: Fully optimized for macOS (Apple Silicon/Intel) and Windows with a clean, responsive Dear PyGui interface.
 - **TouchPlayer Support**: Launch projects in TouchPlayer instead of TouchDesigner with a single toggle.
 - **In-App Help**: Built-in help modal (**Help** button) with keyboard shortcut reference and utility TOX info.
-- **Sync Utility**: Companion component for TouchDesigner to keep your history updated and icons generated.
+- **Native Recent Files**: Automatically reads your TouchDesigner recent files from the OS (Windows Registry / macOS Shared File List) — no setup needed.
+- **Icon Utility**: Optional companion component for TouchDesigner to auto-generate project thumbnails.
 
 ---
 
@@ -62,14 +63,13 @@ Launching the app directly opens the project dashboard. Here you can browse your
 ### Alternative Usage
 You can also drag and drop `.toe` files directly onto the TD Launcher Plus app icon.
 
-### TouchDesigner Utility Component (Recommended)
-A companion TouchDesigner component (`TDLauncherPlusUtility.tox`) is included that integrates with TD Launcher Plus. **For best results, add this to your default startup file** so it's always available.
+### TouchDesigner Utility Component (Optional)
+A companion TouchDesigner component (`TDLauncherPlusUtility.tox`) is included that integrates with TD Launcher Plus. Add this to your default startup file for automatic project icon generation.
 
 **Why use it?**
-Without this utility, only files launched through TD Launcher Plus appear in the Recent Files list. The utility bridges this gap by notifying the launcher whenever you save a project directly in TouchDesigner.
+TD Launcher Plus already reads your recent files directly from the OS (see [Recent Files](#recent-files)), so the utility is **not required** for recent files to appear. Its main purpose is **automatic icon generation** — taking a snapshot of your `/perform` window each time you save, so your projects get visual thumbnails in the launcher.
 
 **Features:**
-- **Sync recent files:** Transmits project data to TD Launcher Plus when you save, so files opened directly in TouchDesigner also appear in Recent Files
 - **Auto-generate icons:** Takes a snapshot of the `/perform` window each time the project is saved, creating `icon_temp.png` for the project thumbnail
 - **Manual icon creation:** Create a custom icon that takes priority over automatic snapshots
 - **Quick access:** Open TD Launcher Plus directly from within TouchDesigner
@@ -118,13 +118,19 @@ TD Launcher Plus analyzes each `.toe` file to determine which TouchDesigner vers
 ### Recent Files
 TD Launcher Plus keeps track of recently opened projects. Files are added to the Recent Files list only when actually launched (via button, double-click, countdown, or Enter) — not when simply browsing. Browsed files still appear in the UI for the current session.
 
+**Native Recent Files Discovery:** TD Launcher Plus automatically reads TouchDesigner's native recent files directly from the OS — no companion utility needed:
+- **Windows:** Reads from the Windows Registry (`HKCU\Software\Derivative\recent files`)
+- **macOS:** Reads from the macOS Shared File List (`.sfl4` bookmark data)
+
+This means any file you open in TouchDesigner will automatically appear in TD Launcher Plus, even without the companion utility TOX.
+
 **Color Coding:**
 - **Vibrant Green:** **Active Session** — The file you currently have selected or just launched.
 - **Soft Green:** **Launcher History** — Files manually opened through TD Launcher Plus.
 - **Soft Yellow:** **TouchDesigner History** — Recent files detected from your TouchDesigner application's native history.
 - **White:** **Default** — Standard entries or legacy history.
 
-**Full History:** Your launcher history is merged with TouchDesigner's native recent files list. Duplicate paths are automatically removed, with launcher-sourced files taking priority. Path comparisons are case-insensitive and ignore slash direction differences.
+**Full History:** Your launcher history is merged with TouchDesigner's native recent files list. Duplicate paths are automatically removed, with TD-sourced files taking priority. Path comparisons are case-insensitive and ignore slash direction differences.
 
 **Versioned files:** TouchDesigner auto-saves create versioned files like `project.7.toe`, `project.8.toe`, etc. TD Launcher Plus intelligently handles these:
 - Versioned files are displayed as their non-versioned counterpart (e.g., `project.7.toe` shows as `project.toe`)

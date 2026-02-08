@@ -351,7 +351,8 @@ class TDManager:
             elif year == "2019" and platform.system() == 'Windows':
                 url = f'https://download.derivative.ca/TouchDesigner099.{year}.{build}{extension}'
             else:
-                url = f'https://download.derivative.ca/TouchDesigner.{year}.{build}{arch_suffix}{extension}'
+                url_product = product if product == 'TouchPlayer' and platform.system() != 'Windows' else 'TouchDesigner'
+                url = f'https://download.derivative.ca/{url_product}.{year}.{build}{arch_suffix}{extension}'
 
             return url
 

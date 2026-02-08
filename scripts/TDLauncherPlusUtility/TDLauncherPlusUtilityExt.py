@@ -48,7 +48,7 @@ class TDLauncherPlusUtilityExt:
 		"""
 		### Handled by discovery of recent list in OS registry
 		return
-		recents = app.recentFiles
+		"""recents = app.recentFiles
 		debug(f'Recents: {recents}')
 		path = self.getConfigPath()
 		config = self.loadConfig()
@@ -64,7 +64,7 @@ class TDLauncherPlusUtilityExt:
 			with open(path, 'w', encoding='utf-8') as f:
 				json.dump(config, f, indent=2)
 		except Exception as e:
-			debug(f"TDLauncherUtility: Error saving config: {e}")
+			debug(f"TDLauncherUtility: Error saving config: {e}")"""
 
 	def onParSaveicon(self):
 		self.SaveIcon(is_temp = False)
