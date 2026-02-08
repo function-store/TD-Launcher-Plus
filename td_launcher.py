@@ -32,7 +32,7 @@ from utils import (
 )
 
 # Version
-APP_VERSION = "2.0.3"
+APP_VERSION = "2.0.4"
 
 # Sentinel for the "Default" template entry (launch TD without a file)
 DEFAULT_TEMPLATE = "__default__"
@@ -115,6 +115,20 @@ class LauncherApp:
         # Modifier key tracking (more reliable than is_key_down in packaged builds)
         self._modifier_held = False
         self._modifier_keys = set()  # Track which modifier keys are held
+
+        # DPG item IDs for dynamically recreated widgets (avoid stale alias bugs)
+        self._td_version_container_id = None
+        self._td_version_id = None
+
+    def _new_version_container_id(self):
+        """Generate a fresh UUID for td_version_container to avoid DPG stale alias bugs."""
+        self._td_version_container_id = dpg.generate_uuid()
+        return self._td_version_container_id
+
+    def _new_version_id(self):
+        """Generate a fresh UUID for td_version to avoid DPG stale alias bugs."""
+        self._td_version_id = dpg.generate_uuid()
+        return self._td_version_id
 
     def _is_ctrl_pressed(self) -> bool:
         """Check if Ctrl (Windows) or Cmd (macOS) is currently pressed using OS-native APIs.
@@ -1055,9 +1069,9 @@ class LauncherApp:
 
         # 1. Rebuild Header
         if dpg.does_item_exist("readme_header_group"):
-            if dpg.does_item_exist("readme_edit_header_btn"):
-                dpg.delete_item("readme_edit_header_btn")
-            dpg.delete_item("readme_header_group", children_only=True)
+            for _, children in dpg.get_item_children("readme_header_group").items():
+                for child in children:
+                    dpg.delete_item(child)
             with dpg.group(horizontal=True, parent="readme_header_group"):
                 dpg.add_text("Project Info", color=[200, 200, 200, 255])
                 if not self.readme_editing_active:
@@ -1071,24 +1085,21 @@ class LauncherApp:
 
         # 2. Rebuild Content
         if dpg.does_item_exist("readme_content_group"):
-            # Explicitly delete tagged grandchildren first (DPG alias cleanup bug)
-            for tag in ("readme_gutter_text", "readme_content_display", "readme_content_text"):
-                if dpg.does_item_exist(tag):
-                    dpg.delete_item(tag)
-            dpg.delete_item("readme_content_group", children_only=True)
-            
+            # Delete the whole group (not children_only) to avoid DPG stale alias bugs
+            dpg.delete_item("readme_content_group")
+
             gutter = ""
             display_content = "No README content loaded."
-            
+
             if self.current_readme_path and os.path.exists(self.current_readme_path):
                 try:
                     # For display, we read from disk
                     with open(self.current_readme_path, 'r', encoding='utf-8') as f:
                         disk_content = f.read()
-                    
+
                     # Use buffer if editing, otherwise disk content
                     active_text = self.readme_edit_buffer if self.readme_editing_active else disk_content
-                    
+
                     if not self.readme_editing_active and self.readme_wrapped:
                         vp_width = dpg.get_viewport_width()
                         dynamic_width = max(30, int((vp_width - 630) / 9))
@@ -1100,7 +1111,8 @@ class LauncherApp:
                 except Exception as e:
                     display_content = f"Error reading README: {e}"
 
-            with dpg.group(horizontal=True, parent="readme_content_group"):
+            # Recreate the group inside readme_scroll_parent
+            with dpg.group(horizontal=True, parent="readme_scroll_parent", tag="readme_content_group"):
                 # Always show gutter (line numbers)
                 dpg.add_text(gutter, tag="readme_gutter_text", color=[100, 100, 100, 255])
                 
@@ -1197,7 +1209,10 @@ class LauncherApp:
     def _update_version_panel(self, skip_analysis: bool = False):
         """Update the version panel with selected file info."""
         if dpg.does_item_exist("version_panel"):
-            dpg.delete_item("version_panel", children_only=True)
+            # Delete children individually to avoid DPG stale alias bugs with children_only
+            for _, children in dpg.get_item_children("version_panel").items():
+                for child in children:
+                    dpg.delete_item(child)
 
         # Handle "Default" template (launch TD without a file)
         if self.selected_file == DEFAULT_TEMPLATE:
@@ -1209,11 +1224,11 @@ class LauncherApp:
             dpg.add_separator(parent="version_panel")
             version_keys = self.td_manager.get_sorted_version_keys()
             if version_keys:
-                with dpg.child_window(height=240, width=-1, parent="version_panel", tag="td_version_container"):
+                with dpg.child_window(height=240, width=-1, parent="version_panel", tag=self._new_version_container_id()):
                     dpg.add_radio_button(
                         version_keys,
                         default_value=version_keys[-1],
-                        tag="td_version",
+                        tag=self._new_version_id(),
                         horizontal=False,
                         callback=self._on_version_selected
                     )
@@ -1272,11 +1287,11 @@ class LauncherApp:
             version_keys = self.td_manager.get_sorted_version_keys()
             if version_keys:
                 # Default taller height (180) when no missing version warning is present
-                with dpg.child_window(height=240, width=-1, parent="version_panel", tag="td_version_container"):
+                with dpg.child_window(height=240, width=-1, parent="version_panel", tag=self._new_version_container_id()):
                     dpg.add_radio_button(
                         version_keys,
                         default_value=version_keys[-1],  # Most recent version
-                        tag="td_version",
+                        tag=self._new_version_id(),
                         horizontal=False,
                         callback=self._on_version_selected
                     )
@@ -1348,11 +1363,11 @@ class LauncherApp:
 
         # Dynamic height based on download button presence (Installed: 180, Missing: 100)
         container_height = 190 if version_installed else 163
-        with dpg.child_window(height=container_height, width=-1, parent="version_panel", tag="td_version_container"):
+        with dpg.child_window(height=container_height, width=-1, parent="version_panel", tag=self._new_version_container_id()):
             dpg.add_radio_button(
                 version_keys,
                 default_value=default_version,
-                tag="td_version",
+                tag=self._new_version_id(),
                 horizontal=False,
                 callback=self._on_version_selected
             )
@@ -1603,9 +1618,14 @@ class LauncherApp:
         import webbrowser
         import tempfile
 
-        content = dpg.get_value("readme_content_text")
-        # Unwrap for the HTML viewer
-        content = self._unwrap_content(content)
+        # Read from file directly (the edit widget only exists in edit mode)
+        content = ""
+        if self.current_readme_path and os.path.exists(self.current_readme_path):
+            try:
+                with open(self.current_readme_path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+            except Exception:
+                pass
         if not content.strip():
             return
 
@@ -1991,7 +2011,7 @@ class LauncherApp:
         # Standard ascii space is 32. DPG on Windows sometimes uses 524.
         if (key_code == 32 or key_code == 524 or key_code == getattr(dpg, 'mvKey_Space', -1)) and not modifier_held:
             if self.selection_focus == 'picker':
-                if dpg.does_item_exist("td_version"):
+                if self._td_version_id and dpg.does_item_exist(self._td_version_id):
                     self.selection_focus = 'versions'
                     # Visual feedback: Picker turns Green, highlight versions
                     
@@ -2182,7 +2202,7 @@ class LauncherApp:
         if 0.05 <= time_since_last < 0.5:
             # Double-click - launch with current version selection IF it's installed
             if file_path == DEFAULT_TEMPLATE or os.path.exists(file_path):
-                version = dpg.get_value("td_version") if dpg.does_item_exist("td_version") else self.build_info
+                version = dpg.get_value(self._td_version_id) if self._td_version_id and dpg.does_item_exist(self._td_version_id) else self.build_info
                 if version and self.td_manager.is_version_installed(version):
                     self.countdown_enabled = False
                     self._on_launch(sender, app_data)
@@ -2382,7 +2402,7 @@ class LauncherApp:
         promote = user_data is not False
 
         # Get selected version
-        version = dpg.get_value("td_version") if dpg.does_item_exist("td_version") else self.build_info
+        version = dpg.get_value(self._td_version_id) if self._td_version_id and dpg.does_item_exist(self._td_version_id) else self.build_info
         self._launch_project(self.selected_file, version, promote=promote)
 
     def _on_download(self, sender, app_data):
@@ -2966,14 +2986,14 @@ class LauncherApp:
 
     def _move_version_selection(self, step: int):
         """Move version selection up or down."""
-        if not dpg.does_item_exist("td_version"):
+        if not self._td_version_id and dpg.does_item_exist(self._td_version_id):
             return
             
         version_keys = self.td_manager.get_sorted_version_keys()
         if not version_keys:
             return
             
-        current_version = dpg.get_value("td_version")
+        current_version = dpg.get_value(self._td_version_id)
         try:
             # Keys are sorted, so we can find index
             current_idx = version_keys.index(current_version)
@@ -2981,19 +3001,19 @@ class LauncherApp:
             current_idx = 0
             
         new_idx = max(0, min(current_idx + step, len(version_keys) - 1))
-        dpg.set_value("td_version", version_keys[new_idx])
+        dpg.set_value(self._td_version_id, version_keys[new_idx])
         
         # Scroll to selection
-        if dpg.does_item_exist("td_version_container"):
+        if self._td_version_container_id and dpg.does_item_exist(self._td_version_container_id):
             row_h = 22 # Standard radio row height
             target_y = new_idx * row_h
-            curr_scroll = dpg.get_y_scroll("td_version_container")
+            curr_scroll = dpg.get_y_scroll(self._td_version_container_id)
             page_h = 150 # Height as defined in _update_version_panel (synced)
             
             if target_y < curr_scroll:
-                dpg.set_y_scroll("td_version_container", target_y)
+                dpg.set_y_scroll(self._td_version_container_id, target_y)
             elif target_y + row_h > curr_scroll + page_h:
-                dpg.set_y_scroll("td_version_container", target_y + row_h - page_h)
+                dpg.set_y_scroll(self._td_version_container_id, target_y + row_h - page_h)
 
     # =========================================================================
     # Helpers
