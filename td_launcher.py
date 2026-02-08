@@ -115,6 +115,8 @@ class LauncherApp:
         self.use_touchplayer: bool = False
 
         # Version analysis cache (path -> build_info)
+        # NOTE: self.build_info always stores "TouchDesigner.YYYY.XXXXX" (canonical form).
+        # Use self.display_build_info for UI labels — it swaps to "TouchPlayer" when needed.
         self.version_cache: dict = {}
 
         # Modifier key tracking (more reliable than is_key_down in packaged builds)
@@ -1481,7 +1483,7 @@ class LauncherApp:
                 dpg.add_table_column(width_fixed=True)
                 with dpg.table_row():
                     dpg.add_text(
-                        f'Required: {self.build_info} (NOT INSTALLED)',
+                        f'Required: {self.display_build_info} (NOT INSTALLED)',
                         color=[255, 50, 0, 255]
                     )
                     dpg.add_checkbox(label="Use TouchPlayer", tag="use_touchplayer_checkbox",
@@ -1496,7 +1498,7 @@ class LauncherApp:
                 dpg.add_table_column(width_fixed=True)
                 with dpg.table_row():
                     dpg.add_text(
-                        f'Required: {self.build_info} (installed)',
+                        f'Required: {self.display_build_info} (installed)',
                         color=[50, 255, 0, 255]
                     )
                     dpg.add_checkbox(label="Use TouchPlayer", tag="use_touchplayer_checkbox",
@@ -1607,11 +1609,8 @@ class LauncherApp:
                             dpg.set_value("download_filter", 'a')
                         else:
                             dpg.set_value("download_filter", 'c')
-                        download_label = self.build_info
-                        if self.use_touchplayer and download_label:
-                            download_label = download_label.replace('TouchDesigner.', 'TouchPlayer.', 1)
                         dpg.add_button(
-                            label=f'Download: {download_label}',
+                            label=f'Download: {self.display_build_info}',
                             width=-1,
                             callback=self._on_download,
                             filter_key="a"
@@ -1636,11 +1635,8 @@ class LauncherApp:
 
             with dpg.filter_set(id="install_filter"):
                 dpg.set_value("install_filter", 'z')
-                install_label = self.build_info
-                if self.use_touchplayer and install_label:
-                    install_label = install_label.replace('TouchDesigner.', 'TouchPlayer.', 1)
                 dpg.add_button(
-                    label=f'Install: {install_label}',
+                    label=f'Install: {self.display_build_info}',
                     width=-1,
                     enabled=True,
                     filter_key="a",
@@ -2710,11 +2706,8 @@ class LauncherApp:
     def _on_download(self, sender, app_data):
         """Handle download button click."""
         # Regenerate URL for the correct product (TouchPlayer vs TouchDesigner)
-        if self.build_info:
-            download_build = self.build_info
-            if self.use_touchplayer:
-                download_build = download_build.replace('TouchDesigner.', 'TouchPlayer.', 1)
-            self.td_url = self.td_manager.generate_download_url(download_build)
+        if self.display_build_info:
+            self.td_url = self.td_manager.generate_download_url(self.display_build_info)
             if self.td_url:
                 td_filename = self.td_url.split("/")[-1]
                 toe_dir = os.path.dirname(os.path.abspath(self.selected_file)) if self.selected_file else ""
@@ -2780,7 +2773,7 @@ class LauncherApp:
             height=modal_height,
             pos=[(viewport_width - modal_width) // 2, (viewport_height - modal_height) // 2]
         ):
-            dpg.add_text(f"Ready to install {self.build_info}")
+            dpg.add_text(f"Ready to install {self.display_build_info}")
             dpg.add_text(filename, color=[150, 150, 150, 255])
             dpg.add_spacer(height=5)
             with dpg.group(horizontal=True):
@@ -3593,6 +3586,15 @@ class LauncherApp:
         except Exception:
             pass
         return None
+
+    @property
+    def display_build_info(self) -> Optional[str]:
+        """Return build_info with the product name matching the current mode."""
+        if not self.build_info:
+            return None
+        if self.use_touchplayer:
+            return self.build_info.replace('TouchDesigner.', 'TouchPlayer.', 1)
+        return self.build_info
 
     def _get_current_tab(self) -> str:
         """Get the current picker tab."""
