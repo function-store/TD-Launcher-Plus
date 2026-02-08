@@ -60,12 +60,15 @@ jobs:
         run: |
           pip install pyinstaller
           pyinstaller --noconfirm --log-level=WARN ^
-            --onefile --nowindow ^
+            --onedir ^
             --windowed ^
             --name="td_launcher_plus" ^
             --icon="td_launcher_plus.ico" ^
             --add-data="td_launcher_plus.ico;." ^
             --add-data="touchdesigner.png;." ^
+            --hidden-import="PIL" ^
+            --hidden-import="PIL.Image" ^
+            --hidden-import="PIL.ImageOps" ^
             --add-binary="toeexpand/toeexpand.exe;toeexpand" ^
             --add-binary="test.toe;." ^
             --add-binary="toeexpand/iconv.dll;toeexpand" ^
