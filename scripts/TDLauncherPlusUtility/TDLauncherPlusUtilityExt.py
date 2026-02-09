@@ -68,26 +68,26 @@ class TDLauncherPlusUtilityExt:
 
 	def SaveIcon(self, is_temp = True):
 		"""
-		Save icon_{project_base_name}.png to support unique icons for multiple projects in the same folder.
+		Save {project_base_name}_icon.png or {project_base_name}_icon_temp.png
+		to support unique icons for multiple projects in the same folder.
 		"""
 		if not self.evalSavetempicon:
 			return
-		
+
 		# Determine base name (strip .toe and version number)
 		name = project.name
 		if name.lower().endswith('.toe'):
 			name = name[:-4]
-			
+
 		# Strip version number (e.g. Project.1 -> Project)
 		if '.' in name:
 			parts = name.rsplit('.', 1)
 			if parts[1].isdigit():
 				name = parts[0]
-				
-		# Prepend 'temp_' if this is an auto-generated temporary icon
-		prefix = "temp_" if is_temp else ""
-		filename = f'icon_{prefix}{name}.png'
-		
+
+		suffix = "_icon_temp" if is_temp else "_icon"
+		filename = f'{name}{suffix}.png'
+
 		self.icon_source.save(filename, quality = 0.5, metadata=[("source","TDLauncherPlusUtility"), ("project_name", project.name)])
 
 

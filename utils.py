@@ -148,11 +148,13 @@ def find_project_icon(project_path: str) -> Optional[str]:
     """Find an icon for a project file based on a specific priority order.
 
     Priority:
-    1. icon_{name}.png/jpg/jpeg (Manual override)
-    2. icon_temp_{name}.png/jpg/jpeg (Auto-generated specific)
-    3. icon.png/jpg/jpeg (Generic project icon)
-    4. Any image in the directory NOT starting with "icon_" (e.g., screenshots)
-    5. Returns None (caller should use default app icon)
+    1. {name}_icon.png/jpg/jpeg (e.g., MyProject_icon.png)
+    2. {name}_icon_temp.png/jpg/jpeg (auto-generated)
+    3. icon_{name}.png/jpg/jpeg (Manual override)
+    4. icon_temp_{name}.png/jpg/jpeg (Auto-generated specific)
+    5. icon.png/jpg/jpeg (Generic project icon)
+    6. Any image in the directory NOT starting with "icon_" (e.g., screenshots)
+    7. Returns None (caller should use default app icon)
 
     Returns the path to the icon file, or None if not found.
     """
@@ -183,27 +185,41 @@ def find_project_icon(project_path: str) -> Optional[str]:
         names_to_check.append(project_base_no_version)
     names_to_check.append(project_base)
 
-    # 1. icon_{name}
+    # 1. {name}_icon
+    for name in names_to_check:
+        for ext in ['.png', '.jpg', '.jpeg']:
+            icon_path = os.path.join(project_dir, f'{name}_icon{ext}')
+            if os.path.exists(icon_path):
+                return icon_path
+
+    # 2. {name}_icon_temp
+    for name in names_to_check:
+        for ext in ['.png', '.jpg', '.jpeg']:
+            icon_path = os.path.join(project_dir, f'{name}_icon_temp{ext}')
+            if os.path.exists(icon_path):
+                return icon_path
+
+    # 3. icon_{name}
     for name in names_to_check:
         for ext in ['.png', '.jpg', '.jpeg']:
             icon_path = os.path.join(project_dir, f'icon_{name}{ext}')
             if os.path.exists(icon_path):
                 return icon_path
 
-    # 2. icon_temp_{name}
+    # 4. icon_temp_{name}
     for name in names_to_check:
         for ext in ['.png', '.jpg', '.jpeg']:
             icon_path = os.path.join(project_dir, f'icon_temp_{name}{ext}')
             if os.path.exists(icon_path):
                 return icon_path
 
-    # 3. icon
+    # 5. icon
     for ext in ['.png', '.jpg', '.jpeg']:
         icon_path = os.path.join(project_dir, f'icon{ext}')
         if os.path.exists(icon_path):
             return icon_path
 
-    # 4. Any image not starting with icon_ (Fallback to screenshots etc.)
+    # 6. Any image not starting with icon_ (Fallback to screenshots etc.)
     try:
         candidates = []
         for f in os.listdir(project_dir):
@@ -220,7 +236,7 @@ def find_project_icon(project_path: str) -> Optional[str]:
     except Exception:
         pass
 
-    # 5. Not found - caller will use default
+    # 7. Not found - caller will use default
     return None
 
 

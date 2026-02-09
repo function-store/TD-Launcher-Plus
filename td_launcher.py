@@ -83,6 +83,7 @@ class LauncherApp:
         self.mono_font = None
         self.active_highlight_tags = set()
         self.last_clicked_path: Optional[str] = None
+        self.last_click_time: float = 0
         self.tab_selection_indices = {'recent': -1, 'templates': -1}
         self.selection_focus = 'versions' if toe_file else 'picker'
         self.deferred_analysis_time = 0.0
@@ -2489,7 +2490,11 @@ class LauncherApp:
             # Double-click - launch with current version selection IF it's installed
             if file_path == DEFAULT_TEMPLATE or os.path.exists(file_path):
                 version = dpg.get_value(self._td_version_id) if self._td_version_id and dpg.does_item_exist(self._td_version_id) else self.build_info
-                if version and self.td_manager.is_version_installed(version):
+                version_ok = version and (
+                    self.td_manager.is_player_installed(version) if self.use_touchplayer
+                    else self.td_manager.is_version_installed(version)
+                )
+                if version_ok:
                     self.countdown_enabled = False
                     self._on_launch(sender, app_data)
                     self.last_click_time = 0
@@ -3254,7 +3259,7 @@ class LauncherApp:
             else:
                 dpg.add_text(
                     "Recent files are read directly from the\n"
-                    "Windows Registry — no setup needed.",
+                    "Windows Registry - no setup needed.",
                     color=[180, 180, 180, 255]
                 )
             dpg.add_spacer(height=2)
@@ -3492,23 +3497,24 @@ class LauncherApp:
         if dpg.does_item_exist(tag):
             self._set_row_highlight(tag, True)
 
-            # Scroll to keep selection visible
+            # Scroll to keep selection visible (skip if container not yet rendered)
             row_prefix = "recent_row_" if current_tab == 'recent' else "template_row_"
             row_tag = f"{row_prefix}{candidate}"
             container = "recent_files_list" if current_tab == 'recent' else "templates_list"
             if dpg.does_item_exist(row_tag) and dpg.does_item_exist(container):
-                row_pos = dpg.get_item_pos(row_tag)       # [x, y] relative to content area
-                row_size = dpg.get_item_rect_size(row_tag) # [w, h]
-                row_y = row_pos[1]
-                row_h = row_size[1] if row_size[1] > 0 else 32
-
-                curr_scroll = dpg.get_y_scroll(container)
                 container_h = dpg.get_item_rect_size(container)[1]
+                if container_h > 0:
+                    row_pos = dpg.get_item_pos(row_tag)
+                    row_size = dpg.get_item_rect_size(row_tag)
+                    row_y = row_pos[1]
+                    row_h = row_size[1] if row_size[1] > 0 else 32
 
-                if row_y < curr_scroll:
-                    dpg.set_y_scroll(container, max(0, row_y - 4))
-                elif row_y + row_h > curr_scroll + container_h:
-                    dpg.set_y_scroll(container, row_y + row_h - container_h + 4)
+                    curr_scroll = dpg.get_y_scroll(container)
+
+                    if row_y < curr_scroll:
+                        dpg.set_y_scroll(container, max(0, row_y - 4))
+                    elif row_y + row_h > curr_scroll + container_h:
+                        dpg.set_y_scroll(container, row_y + row_h - container_h + 4)
 
         # Update selected file
         item = items[candidate]
