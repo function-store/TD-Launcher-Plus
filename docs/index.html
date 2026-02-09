@@ -1,0 +1,605 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TD Launcher Plus</title>
+  <style>
+    :root {
+      --bg: #1c1c1c;
+      --bg-surface: #252526;
+      --bg-card: #1e1e26;
+      --green-title: #5ecc5e;
+      --green-bright: #6abf6a;
+      --green-soft: #a0cca0;
+      --green-header: rgba(46, 140, 46, 0.3);
+      --blue-header: rgba(66, 150, 250, 0.4);
+      --yellow-soft: #ffffc8;
+      --text: #d4d4d4;
+      --text-muted: #646464;
+      --border: #333;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.65;
+      overflow-x: hidden;
+    }
+
+    /* Hero */
+    .hero {
+      text-align: center;
+      padding: 4rem 2rem 2rem;
+      background: linear-gradient(180deg, #0d1a0d 0%, var(--bg) 100%);
+    }
+    .hero h1 {
+      font-size: 3rem;
+      font-weight: 700;
+      color: var(--green-title);
+      letter-spacing: 0.02em;
+      margin-bottom: 0.5rem;
+      text-shadow: 0 0 30px rgba(94, 204, 94, 0.2);
+    }
+    .hero .tagline {
+      font-size: 1.15rem;
+      color: var(--text-muted);
+      max-width: 640px;
+      margin: 0 auto 2rem;
+    }
+    .hero .cta {
+      display: inline-block;
+      padding: 0.75rem 2rem;
+      background: #4db84d;
+      color: #111;
+      font-weight: 700;
+      font-size: 1rem;
+      border-radius: 6px;
+      text-decoration: none;
+      transition: background 0.2s, box-shadow 0.2s;
+    }
+    .hero .cta:hover {
+      background: #5ecc5e;
+      box-shadow: 0 0 16px rgba(94, 204, 94, 0.25);
+    }
+
+    /* Screenshot */
+    .screenshot-wrap {
+      text-align: center;
+      padding: 1.5rem 2rem 3rem;
+    }
+    .screenshot-wrap img {
+      max-width: 780px;
+      width: 100%;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      box-shadow: 0 8px 40px rgba(0, 0, 0, 0.6);
+    }
+
+    /* Sections */
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 0 2rem;
+    }
+
+    section {
+      padding: 2.5rem 0;
+    }
+
+    h2 {
+      font-size: 1.75rem;
+      color: var(--green-bright);
+      margin-bottom: 1.25rem;
+      border-bottom: 2px solid var(--green-header);
+      padding-bottom: 0.35rem;
+    }
+
+    h3 {
+      font-size: 1.2rem;
+      color: var(--green-soft);
+      margin: 1.5rem 0 0.5rem;
+    }
+
+    p { margin-bottom: 0.85rem; }
+
+    a { color: var(--green-bright); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    ul, ol {
+      margin: 0.5rem 0 1rem 1.5rem;
+    }
+    li { margin-bottom: 0.35rem; }
+    li strong { color: var(--green-soft); }
+
+    /* Feature grid */
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      gap: 1.25rem;
+      margin: 1.5rem 0;
+    }
+    .feature-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1.25rem;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    .feature-card:hover {
+      border-color: rgba(94, 204, 94, 0.3);
+      box-shadow: 0 0 12px rgba(94, 204, 94, 0.06);
+    }
+    .feature-card h4 {
+      font-size: 1rem;
+      color: var(--green-bright);
+      margin-bottom: 0.4rem;
+    }
+    .feature-card p {
+      font-size: 0.92rem;
+      color: var(--text);
+      margin: 0;
+    }
+
+    /* Color coding demo */
+    .color-demo {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      margin: 1rem 0;
+    }
+    .color-chip {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.45rem 0.85rem;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-size: 0.88rem;
+    }
+    .color-chip .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    /* Keyboard shortcuts table */
+    .shortcut-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 0.75rem 0 1.5rem;
+      font-size: 0.92rem;
+    }
+    .shortcut-table th {
+      text-align: left;
+      padding: 0.5rem 0.75rem;
+      background: var(--green-header);
+      color: var(--green-soft);
+      font-weight: 600;
+    }
+    .shortcut-table td {
+      padding: 0.4rem 0.75rem;
+      border-bottom: 1px solid var(--border);
+    }
+    .shortcut-table tr:hover td {
+      background: rgba(94, 204, 94, 0.03);
+    }
+    kbd {
+      display: inline-block;
+      padding: 0.15rem 0.45rem;
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      font-family: 'SF Mono', 'Consolas', 'Menlo', monospace;
+      font-size: 0.82rem;
+      color: var(--yellow-soft);
+    }
+
+    /* Modes section */
+    .mode-cards {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.25rem;
+      margin: 1rem 0;
+    }
+    .mode-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1.5rem;
+    }
+    .mode-card h4 {
+      color: var(--green-bright);
+      margin-bottom: 0.5rem;
+      font-size: 1.05rem;
+    }
+    .mode-card p, .mode-card ul {
+      font-size: 0.92rem;
+    }
+
+    /* Utility section */
+    .platform-tags {
+      display: flex;
+      gap: 0.5rem;
+      margin-bottom: 0.75rem;
+    }
+    .tag {
+      padding: 0.2rem 0.6rem;
+      border-radius: 4px;
+      font-size: 0.78rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .tag-mac {
+      background: var(--blue-header);
+      color: #a0c8ff;
+    }
+    .tag-win {
+      background: var(--green-header);
+      color: var(--green-soft);
+    }
+
+    /* Icon priority */
+    .icon-priority {
+      counter-reset: icon-step;
+      list-style: none;
+      margin-left: 0;
+      padding: 0;
+    }
+    .icon-priority li {
+      counter-increment: icon-step;
+      padding: 0.5rem 0.75rem;
+      background: var(--bg-card);
+      border-left: 3px solid var(--green-header);
+      margin-bottom: 0.4rem;
+      border-radius: 0 4px 4px 0;
+    }
+    .icon-priority li::before {
+      content: counter(icon-step) ".";
+      color: var(--green-bright);
+      font-weight: 700;
+      margin-right: 0.5rem;
+    }
+    .icon-priority code {
+      color: var(--yellow-soft);
+      background: var(--bg-surface);
+      padding: 0.1rem 0.35rem;
+      border-radius: 3px;
+      font-size: 0.88rem;
+    }
+
+    /* Footer */
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 2rem;
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 0.88rem;
+      margin-top: 2rem;
+    }
+    footer a { color: var(--green-bright); }
+
+    /* Security section */
+    .security-steps {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1.25rem 1.5rem;
+      margin: 1rem 0;
+    }
+    .security-steps ol {
+      margin: 0.5rem 0 0 1.2rem;
+    }
+    .security-steps img {
+      max-width: 400px;
+      width: 100%;
+      border-radius: 6px;
+      margin-top: 1rem;
+      border: 1px solid var(--border);
+    }
+
+    code {
+      color: var(--yellow-soft);
+      background: var(--bg-surface);
+      padding: 0.1rem 0.35rem;
+      border-radius: 3px;
+      font-size: 0.88rem;
+      font-family: 'SF Mono', 'Consolas', 'Menlo', monospace;
+    }
+
+    pre {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 1rem;
+      overflow-x: auto;
+      margin: 0.75rem 0 1.25rem;
+    }
+    pre code {
+      background: none;
+      padding: 0;
+      font-size: 0.88rem;
+      color: var(--text);
+    }
+
+    /* Responsive */
+    @media (max-width: 700px) {
+      .hero h1 { font-size: 2rem; }
+      .hero .tagline { font-size: 1rem; }
+      .mode-cards { grid-template-columns: 1fr; }
+      .features-grid { grid-template-columns: 1fr; }
+      .container { padding: 0 1.25rem; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Hero -->
+  <div class="hero">
+    <h1>TD Launcher Plus</h1>
+    <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1rem;">by <a href="https://functionstore.xyz/link-in-bio" target="_blank" rel="noopener" style="color: var(--text-muted); text-decoration: underline;">Function Store</a></p>
+    <p class="tagline">A focused project dashboard for TouchDesigner. Launch .toe files with the correct version automatically, browse recents, manage templates, and preview project docs.</p>
+    <a class="cta" href="https://github.com/function-store/TD-Launcher-Plus/releases/latest" target="_blank" rel="noopener">Download Latest Release</a>
+    <p style="margin-top: 0.75rem; font-size: 0.85rem; color: var(--text-muted);">macOS users: see <a href="#macos-security" style="color: var(--green-bright);">security note</a> for first-launch instructions</p>
+  </div>
+
+  <!-- Screenshot -->
+  <div class="screenshot-wrap">
+    <img src="TDLauncherPlus_recents.png" alt="TD Launcher Plus — Recent Files view">
+  </div>
+
+  <div class="container">
+
+    <!-- Key Features -->
+    <section>
+      <h2>Key Features</h2>
+      <div class="features-grid">
+        <div class="feature-card">
+          <h4>Smart Version Detection</h4>
+          <p>Automatically identifies and launches the required TouchDesigner build for any .toe file.</p>
+        </div>
+        <div class="feature-card">
+          <h4>Project Dashboard</h4>
+          <p>Quick-access hubs for Recent Files and Templates with persistent memory across sessions.</p>
+        </div>
+        <div class="feature-card">
+          <h4>Integrated Documentation</h4>
+          <p>View and edit project README.md files directly within the launcher.</p>
+        </div>
+        <div class="feature-card">
+          <h4>Visual Previews</h4>
+          <p>Automatic thumbnail generation and custom icon support for a rich browsing experience.</p>
+        </div>
+        <div class="feature-card">
+          <h4>Search &amp; Filter</h4>
+          <p>Quickly find projects by typing in the search bar with wildcard support — filters in real time.</p>
+        </div>
+        <div class="feature-card">
+          <h4>Keyboard Navigation</h4>
+          <p>Full keyboard navigation with tab memory for fast and fluid workflow.</p>
+        </div>
+        <div class="feature-card">
+          <h4>TouchPlayer Support</h4>
+          <p>Launch projects in TouchPlayer instead of TouchDesigner with a single toggle.</p>
+        </div>
+        <div class="feature-card">
+          <h4>Native Experience</h4>
+          <p>Fully optimized for macOS (Apple Silicon/Intel) and Windows with a clean DearPyGui interface.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- How it Works -->
+    <section>
+      <h2>How It Works</h2>
+      <div class="mode-cards">
+        <div class="mode-card">
+          <h4>Automatic Launch Mode</h4>
+          <p>Open a <code>.toe</code> file with TD Launcher Plus and it instantly analyzes the file, detects the required version, and presents a 5-second countdown.</p>
+          <ul>
+            <li><strong>Auto-launch:</strong> Left undisturbed, the project opens in the detected version</li>
+            <li><strong>Interrupt:</strong> Click or press any key to stop the timer and choose manually</li>
+          </ul>
+        </div>
+        <div class="mode-card">
+          <h4>Dashboard Mode</h4>
+          <p>Launch the app directly to open the project dashboard. Browse Recent Files and Templates, view project info, and manage your workflow.</p>
+          <ul>
+            <li><strong>Smart Discovery:</strong> Scans for all installed TD versions</li>
+            <li><strong>Integrated Docs:</strong> README.md loads instantly per project</li>
+            <li><strong>First-Run Setup:</strong> Guided .toe file association on first launch</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- Recent Files -->
+    <section>
+      <h2>Recent Files</h2>
+      <p>TD Launcher Plus keeps track of recently opened projects. Files are added when actually launched — not when simply browsing.</p>
+
+      <h3>Native Recent Files Discovery</h3>
+      <ul>
+        <li><strong>Windows:</strong> Reads recent files directly from the Windows Registry — no setup needed.</li>
+        <li><strong>macOS:</strong> Install the companion <strong>TDLauncherPlusUtility.tox</strong> to sync recent files from TouchDesigner.</li>
+      </ul>
+
+      <h3>Color Coding</h3>
+      <div class="color-demo">
+        <div class="color-chip"><span class="dot" style="background: #6abf6a;"></span> Active Session</div>
+        <div class="color-chip"><span class="dot" style="background: #a0cca0;"></span> Launcher History</div>
+        <div class="color-chip"><span class="dot" style="background: #ddd8a0;"></span> TouchDesigner History</div>
+        <div class="color-chip"><span class="dot" style="background: #fff;"></span> Default</div>
+      </div>
+
+      <h3>Smart Versioning</h3>
+      <p>TouchDesigner auto-save versions like <code>project.7.toe</code> are displayed as their base name. Multiple versions of the same project appear only once. Backup folder files are shown with a <code>Backup/</code> prefix.</p>
+    </section>
+
+    <!-- Templates -->
+    <section>
+      <h2>Templates</h2>
+      <p>Save frequently-used project templates for quick access in a separate tab. A built-in <strong>"Default (new project)"</strong> entry is always at the top for launching TouchDesigner with its default startup file.</p>
+      <ul>
+        <li>Click <strong>"Add Templates..."</strong> to add .toe files as templates</li>
+        <li>Templates default to the <strong>latest installed TD version</strong></li>
+        <li>Reorder with the arrow buttons or <kbd>Cmd</kbd>/<kbd>Ctrl</kbd>+<kbd>Up</kbd>/<kbd>Down</kbd></li>
+        <li>Templates persist between sessions</li>
+      </ul>
+    </section>
+
+    <!-- Project Icons -->
+    <section>
+      <h2>Project Icons</h2>
+      <p>Enable <strong>"Show Icons"</strong> to display project thumbnails. Icons are auto-generated by the companion utility TOX, or you can place your own.</p>
+      <h3>Icon Search Order</h3>
+      <ol class="icon-priority">
+        <li><code>&lt;projectname&gt;_icon.png</code> — static icon (generated on-demand via Utility TOX)</li>
+        <li><code>&lt;projectname&gt;_icon_temp.png</code> — dynamic icon (auto-generated on-save)</li>
+        <li><code>icon.png</code> — generic project icon</li>
+        <li>Any other image in the project folder (most recently modified)</li>
+        <li>Falls back to the TD Launcher Plus app icon</li>
+      </ol>
+    </section>
+
+    <!-- Keyboard Shortcuts -->
+    <section>
+      <h2>Keyboard Shortcuts</h2>
+
+      <h3>Navigation</h3>
+      <table class="shortcut-table">
+        <tr><th>Key</th><th>Action</th></tr>
+        <tr><td><kbd>Tab</kbd></td><td>Switch between Recent Files and Templates tabs</td></tr>
+        <tr><td><kbd>Up</kbd> / <kbd>W</kbd></td><td>Select previous file</td></tr>
+        <tr><td><kbd>Down</kbd> / <kbd>S</kbd></td><td>Select next file</td></tr>
+        <tr><td><kbd>Enter</kbd></td><td>Launch selected project (or start countdown)</td></tr>
+        <tr><td><kbd>Space</kbd></td><td>Toggle focus: File List (Blue) / Version List (Green)</td></tr>
+        <tr><td><kbd>Esc</kbd></td><td>Quit application</td></tr>
+      </table>
+
+      <h3>Search</h3>
+      <table class="shortcut-table">
+        <tr><th>Key</th><th>Action</th></tr>
+        <tr><td><kbd>Cmd</kbd>/<kbd>Ctrl</kbd>+<kbd>F</kbd></td><td>Open search — type to filter in real time</td></tr>
+        <tr><td><kbd>Esc</kbd></td><td>Clear search and close</td></tr>
+        <tr><td><kbd>Enter</kbd></td><td>Close search (filter stays active)</td></tr>
+        <tr><td><kbd>Up</kbd> / <kbd>Down</kbd></td><td>Navigate filtered list from search field</td></tr>
+      </table>
+
+      <h3>Interface Toggles</h3>
+      <table class="shortcut-table">
+        <tr><th>Key</th><th>Action</th></tr>
+        <tr><td><kbd>C</kbd></td><td>Toggle "Show Icons"</td></tr>
+        <tr><td><kbd>E</kbd></td><td>Toggle "Show Info" (README panel)</td></tr>
+        <tr><td><kbd>R</kbd></td><td>Toggle "Use TouchPlayer"</td></tr>
+        <tr><td><kbd>F</kbd></td><td>Open folder of selected file</td></tr>
+        <tr><td><kbd>Cmd</kbd>/<kbd>Ctrl</kbd>+<kbd>E</kbd></td><td>Edit Mode — focus text editor</td></tr>
+      </table>
+
+      <h3>File Management</h3>
+      <table class="shortcut-table">
+        <tr><th>Key</th><th>Action</th></tr>
+        <tr><td><kbd>Backspace</kbd> / <kbd>Delete</kbd></td><td>Remove selected file (with confirmation)</td></tr>
+        <tr><td><kbd>Cmd</kbd>/<kbd>Ctrl</kbd>+<kbd>Up</kbd>/<kbd>Down</kbd></td><td>Move template up/down</td></tr>
+        <tr><td><kbd>Cmd</kbd>/<kbd>Ctrl</kbd>+<kbd>S</kbd></td><td>Save README changes</td></tr>
+        <tr><td><kbd>Cmd</kbd>/<kbd>Ctrl</kbd>+<kbd>D</kbd></td><td>Quick Launch TD with default startup</td></tr>
+        <tr><td><kbd>Cmd</kbd>/<kbd>Ctrl</kbd>+<kbd>1-9</kbd></td><td>Launch template by position</td></tr>
+      </table>
+    </section>
+
+    <!-- Companion Utility -->
+    <section>
+      <h2>Companion Utility TOX</h2>
+      <p>A TouchDesigner component (<code>TDLauncherPlusUtility.tox</code>) that integrates with TD Launcher Plus. Add it to your default startup file.</p>
+
+      <div class="platform-tags">
+        <span class="tag tag-mac">macOS — Required for Recents</span>
+        <span class="tag tag-win">Windows — Optional (Icons)</span>
+      </div>
+
+      <ul>
+        <li><strong>Auto-generate icons:</strong> Snapshots the <code>/perform</code> window on every save</li>
+        <li><strong>Manual icon creation:</strong> Create custom icons that take priority over auto snapshots</li>
+        <li><strong>Quick access:</strong> Open TD Launcher Plus from within TouchDesigner</li>
+      </ul>
+
+      <h3>Installation</h3>
+      <ol>
+        <li>Import <code>TDLauncherPlusUtility.tox</code> into your project</li>
+        <li>Or better: add it to your default startup .toe file so it's always present — it's lightweight and only does minor file operations on init and save</li>
+      </ol>
+    </section>
+
+    <!-- Installation -->
+    <section>
+      <h2>Installation</h2>
+
+      <h3>Windows</h3>
+      <ol>
+        <li>Download the installer from the <a href="https://github.com/function-store/TD-Launcher-Plus/releases/latest" target="_blank" rel="noopener">releases page</a></li>
+        <li>Run the installer</li>
+        <li>Set Windows to open <code>.toe</code> files with TD Launcher Plus by default</li>
+        <li>Double-clicking <code>.toe</code> files will now launch them with TD Launcher Plus</li>
+      </ol>
+
+      <h3>macOS</h3>
+      <ol>
+        <li>Download the <code>.dmg</code> file from the <a href="https://github.com/function-store/TD-Launcher-Plus/releases/latest" target="_blank" rel="noopener">releases page</a></li>
+        <li>Open the DMG and drag "TD Launcher Plus" to Applications</li>
+        <li><strong>Important:</strong> The app is not notarized — see the security note below</li>
+        <li>File association is automatic. Optionally set as default via right-click &rarr; Get Info &rarr; Open with</li>
+      </ol>
+
+      <div class="security-steps" id="macos-security">
+        <h3>macOS Security Note</h3>
+        <p>Because the app is open-source and not signed with an Apple Developer certificate, macOS Gatekeeper will show a warning.</p>
+        <ol>
+          <li>Double-click the app</li>
+          <li>When the warning appears, click <strong>Done</strong> (not "Move to Trash")</li>
+          <li>Open <strong>System Settings &rarr; Privacy &amp; Security</strong></li>
+          <li>Click <strong>Open Anyway</strong> next to the TD Launcher Plus message</li>
+          <li>You only need to do this once</li>
+        </ol>
+        <p>Alternative: <code>xattr -cr "/Applications/TD Launcher Plus.app"</code></p>
+        <img src="apple_security.png" alt="macOS Security settings showing Open Anyway button">
+      </div>
+    </section>
+
+    <!-- Settings -->
+    <section>
+      <h2>Settings</h2>
+      <ul>
+        <li><strong>Max Recent Files:</strong> Configure how many recent files to keep (5–200, default 33)</li>
+        <li><strong>Clear Missing Files:</strong> Remove all entries whose files no longer exist — cleans Recent Files, Templates, and Windows Registry entries</li>
+      </ul>
+    </section>
+
+    <!-- Contributors -->
+    <section>
+      <h2>Contributors</h2>
+      <ul>
+        <li><a href="https://www.enviral-design.com/" target="_blank" rel="noopener">Lucas Morgan</a> — original TD Launcher with version picker</li>
+        <li><a href="https://functionstore.xyz/link-in-bio" target="_blank" rel="noopener">Dan Molnar / Function Store</a> — cross-platform implementation and "Plus" version</li>
+        <li><a href="https://github.com/keithlostracco" target="_blank" rel="noopener">Keith Lostracco</a> — daily build signature support</li>
+      </ul>
+    </section>
+
+  </div>
+
+  <footer>
+    <p>
+      <a href="https://github.com/function-store/TD-Launcher-Plus" target="_blank" rel="noopener">GitHub Repository</a> &middot;
+      <a href="https://github.com/function-store/TD-Launcher-Plus/releases/latest" target="_blank" rel="noopener">Download</a> &middot;
+      <a href="https://github.com/function-store/TD-Launcher-Plus/issues" target="_blank" rel="noopener">Report an Issue</a>
+    </p>
+    <p style="margin-top: 0.5rem;">Based on <a href="https://github.com/enviraldesign/TD-Launcher" target="_blank" rel="noopener">TD Launcher by EnviralDesign</a> (MIT License)</p>
+  </footer>
+
+</body>
+</html>
