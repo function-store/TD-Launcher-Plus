@@ -53,9 +53,10 @@ class TDManager:
     def _query_windows_registry(self, product: str = "TouchDesigner") -> Dict[str, dict]:
         """Query Windows registry for TouchDesigner or TouchPlayer installations.
 
-        Registry layout: HKLM\\SOFTWARE\\Derivative\\<product>
-        Values are version numbers (e.g. '2025.32280') and corresponding
-        paths stored as 'Path', 'Path_3', 'Path_6', etc.
+        Primary: HKLM\\SOFTWARE\\Derivative\\<product> — version entries matched
+        to Path entries by substring.  Fallback for any unmatched versions:
+        HKEY_CLASSES_ROOT\\<product>.<version>\\shell\\open\\command which stores
+        the executable path directly via file-association registration.
         """
         try:
             import winreg
@@ -64,6 +65,8 @@ class TDManager:
 
         td_dict = {}
 
+        # -- Primary: HKLM path-based lookup --------------------------------
+        versions = []
         try:
             key = winreg.OpenKey(
                 winreg.HKEY_LOCAL_MACHINE,
@@ -72,8 +75,6 @@ class TDManager:
 
             num_values = winreg.QueryInfoKey(key)[1]
 
-            # Collect all values: version numbers and their path entries
-            versions = []
             paths = {}
             for i in range(num_values):
                 name, value, vtype = winreg.EnumValue(key, i)
@@ -85,7 +86,6 @@ class TDManager:
             # Match each version to its install path
             for version in versions:
                 install_path = None
-                # Check all path entries for one containing this version
                 for path_name, path_value in paths.items():
                     if version in path_value:
                         install_path = path_value
@@ -104,6 +104,33 @@ class TDManager:
 
         except (WindowsError, FileNotFoundError):
             pass
+
+        # -- Fallback: HKCR file-association lookup for unmatched versions ---
+        resolved_versions = {k.split('.', 1)[1] for k in td_dict}
+        unmatched = [v for v in versions if v not in resolved_versions]
+
+        if unmatched:
+            logger.debug(
+                "HKLM path match missed %d version(s), falling back to HKCR: %s",
+                len(unmatched), unmatched,
+            )
+            for version in unmatched:
+                hkcr_key_path = rf"{product}.{version}\shell\open\command"
+                try:
+                    command_val = winreg.QueryValue(
+                        winreg.HKEY_CLASSES_ROOT, hkcr_key_path
+                    )
+                    # Value is typically: "C:\...\TouchDesigner.exe" "%1"
+                    exe_path = command_val.split('"')[1] if '"' in command_val else None
+                    if exe_path and os.path.exists(exe_path):
+                        td_key = f"{product}.{version}"
+                        install_path = os.path.dirname(os.path.dirname(exe_path))
+                        td_dict[td_key] = {
+                            'install_path': install_path,
+                            'executable': exe_path,
+                        }
+                except OSError:
+                    pass
 
         return td_dict
 
