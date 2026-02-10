@@ -113,7 +113,7 @@
       margin: 0.5rem 0 1rem 1.5rem;
     }
     li { margin-bottom: 0.35rem; }
-    li strong { color: var(--green-soft); }
+    strong { color: var(--green-soft); }
 
     /* Feature grid */
     .features-grid {
@@ -398,25 +398,56 @@
     <!-- How it Works -->
     <section>
       <h2>How It Works</h2>
+      <p>TD Launcher Plus is a project dashboard that scans for all installed TouchDesigner versions, lets you browse recent files and templates, view project docs, and launch with the version you need.</p>
+      <p>There are two ways to open it:</p>
       <div class="mode-cards">
         <div class="mode-card">
-          <h4>Automatic Launch Mode</h4>
-          <p>Open a <code>.toe</code> file with TD Launcher Plus and it instantly analyzes the file, detects the required version, and presents a 5-second countdown.</p>
-          <ul>
-            <li><strong>Auto-launch:</strong> Left undisturbed, the project opens in the detected version</li>
-            <li><strong>Interrupt:</strong> Click or press any key to stop the timer and choose manually</li>
-          </ul>
+          <h4>Open directly</h4>
+          <p>Launch the app on its own to browse the full dashboard — recent files, templates, version picker, and project info.</p>
         </div>
         <div class="mode-card">
-          <h4>Dashboard Mode</h4>
-          <p>Launch the app directly to open the project dashboard. Browse Recent Files and Templates, view project info, and manage your workflow.</p>
-          <ul>
-            <li><strong>Smart Discovery:</strong> Scans for all installed TD versions</li>
-            <li><strong>Integrated Docs:</strong> README.md loads instantly per project</li>
-            <li><strong>First-Run Setup:</strong> Guided .toe file association on first launch</li>
-          </ul>
+          <h4>Open a .toe file</h4>
+          <p>Double-click a <code>.toe</code> file (requires TD Launcher Plus to be set as the default app for <code>.toe</code> files). The file is analyzed, the required version is detected, and a 5-second countdown begins. Left undisturbed, the project launches automatically. Click or press any key to interrupt and use the full dashboard instead.</p>
         </div>
       </div>
+    </section>
+
+    <!-- Installation -->
+    <section>
+      <h2>Installation</h2>
+
+      <h3>Windows</h3>
+      <ol>
+        <li>Download the installer from the <a href="https://github.com/function-store/TD-Launcher-Plus/releases/latest" target="_blank" rel="noopener">releases page</a></li>
+        <li>Run the installer</li>
+        <li>Set Windows to open <code>.toe</code> files with TD Launcher Plus by default</li>
+        <li>Double-clicking <code>.toe</code> files will now launch them with TD Launcher Plus</li>
+      </ol>
+
+      <h3>macOS</h3>
+      <ol>
+        <li>Download the <code>.dmg</code> file from the <a href="https://github.com/function-store/TD-Launcher-Plus/releases/latest" target="_blank" rel="noopener">releases page</a></li>
+        <li>Open the DMG and drag "TD Launcher Plus" to Applications</li>
+        <li><strong>Important:</strong> The app is not notarized — see the security note below</li>
+        <li>File association is automatic. Optionally set as default via right-click &rarr; Get Info &rarr; Open with</li>
+      </ol>
+
+      <div class="security-steps" id="macos-security">
+        <h3>macOS Security Note</h3>
+        <p>Because the app is open-source and not signed with an Apple Developer certificate, macOS Gatekeeper will show a warning.</p>
+        <ol>
+          <li>Double-click the app</li>
+          <li>When the warning appears, click <strong>Done</strong> (not "Move to Trash")</li>
+          <li>Open <strong>System Settings &rarr; Privacy &amp; Security</strong></li>
+          <li>Click <strong>Open Anyway</strong> next to the TD Launcher Plus message</li>
+          <li>You only need to do this once</li>
+        </ol>
+        <p>Alternative: <code>xattr -cr "/Applications/TD Launcher Plus.app"</code></p>
+        <img src="apple_security.png" alt="macOS Security settings showing Open Anyway button">
+      </div>
+
+      <h3>Companion Utility</h3>
+      <p>For project icons and a more consistent recent-files list (especially on macOS), install the <a href="#companion-utility"><code>TDLauncherPlusUtility.tox</code></a> inside your TouchDesigner projects. On macOS this is <strong>required</strong> for recent-file discovery; on Windows it is optional but enables project thumbnails. See <a href="#companion-utility">Project Icons &amp; Companion Utility</a> for setup instructions.</p>
     </section>
 
     <!-- Recent Files -->
@@ -426,8 +457,8 @@
 
       <h3>Native Recent Files Discovery</h3>
       <ul>
-        <li><strong>Windows:</strong> Reads recent files directly from the Windows Registry — no setup needed.</li>
-        <li><strong>macOS:</strong> Install the companion <strong>TDLauncherPlusUtility.tox</strong> to sync recent files from TouchDesigner.</li>
+        <li><strong>Windows:</strong> Reads recent files directly from the Windows Registry — no setup needed</li>
+        <li><strong>macOS:</strong> Install the companion <code>TDLauncherPlusUtility.tox</code> to sync recent files from TouchDesigner</li>
       </ul>
 
       <h3>Color Coding</h3>
@@ -454,15 +485,38 @@
       </ul>
     </section>
 
-    <!-- Project Icons -->
-    <section>
-      <h2>Project Icons</h2>
-      <p>Enable <strong>"Show Icons"</strong> to display project thumbnails. Icons are auto-generated by the companion utility TOX, or you can place your own.</p>
+    <!-- Project Icons & Companion Utility -->
+    <section id="companion-utility">
+      <h2>Project Icons &amp; Companion Utility</h2>
+      <p>Enable <strong>"Show Icons"</strong> to display project thumbnails next to each file. Icons are generated by the companion <code>TDLauncherPlusUtility.tox</code> — a lightweight TouchDesigner component that must be present in each project for icon generation to work. It cannot generate icons for past projects retroactively.</p>
+
+      <div class="platform-tags">
+        <span class="tag tag-mac">macOS — Required for Recents &amp; Icons</span>
+        <span class="tag tag-win">Windows — Optional (Icons only)</span>
+      </div>
+
+      <h3>Setting Up the Utility</h3>
+      <ol>
+        <li>Import <code>TDLauncherPlusUtility.tox</code> into your project</li>
+        <li>Or better: add it to your default startup <code>.toe</code> file so it's always present — it's lightweight and only does minor file operations on init and save</li>
+      </ol>
+      <p>The utility also provides a <strong>quick-access button</strong> to open TD Launcher Plus directly from within TouchDesigner.</p>
+
+      <h3>How Icons Work</h3>
+      <p>By default, the utility takes a screenshot of the <code>/perform</code> window every time you save and writes it as <code>&lt;projectname&gt;_icon_temp.png</code> next to your <code>.toe</code> file. This gives each project an up-to-date visual thumbnail automatically. The target operator and behavior can be customized via the utility's custom parameters — for example, you can point it at a different operator path if your project uses a dedicated preview or output node instead of <code>/perform</code>.</p>
+
+      <h3>Static vs. Dynamic Icons</h3>
+      <p>The utility supports two icon modes, controlled via its custom parameters:</p>
+      <ul>
+        <li><strong>Dynamic (automatic):</strong> On every save, the utility screenshots the target operator (default: <code>/perform</code>) and writes it as <code>&lt;projectname&gt;_icon_temp.png</code>. The thumbnail updates each time you save, reflecting your project's current state</li>
+        <li><strong>Static (on-demand):</strong> Use the "Save Static Icon" pulse parameter on the utility to capture a one-time snapshot as <code>&lt;projectname&gt;_icon.png</code>. This takes priority over the dynamic icon and won't be overwritten on save — useful for locking in a specific thumbnail</li>
+      </ul>
+
       <h3>Icon Search Order</h3>
       <ol class="icon-priority">
-        <li><code>&lt;projectname&gt;_icon.png</code> — static icon (generated on-demand via Utility TOX)</li>
-        <li><code>&lt;projectname&gt;_icon_temp.png</code> — dynamic icon (auto-generated on-save)</li>
-        <li><code>icon.png</code> — generic project icon</li>
+        <li><code>&lt;projectname&gt;_icon.png</code> — static icon (on-demand via "Save Static Icon" pulse), takes priority, never overwritten on save</li>
+        <li><code>&lt;projectname&gt;_icon_temp.png</code> — dynamic icon, auto-generated on every save, always reflects the latest state</li>
+        <li><code>icon.png</code> — generic project icon shared by all .toe files in the same folder</li>
         <li>Any other image in the project folder (most recently modified)</li>
         <li>Falls back to the TD Launcher Plus app icon</li>
       </ol>
@@ -513,69 +567,11 @@
       </table>
     </section>
 
-    <!-- Companion Utility -->
-    <section>
-      <h2>Companion Utility TOX</h2>
-      <p>A TouchDesigner component (<code>TDLauncherPlusUtility.tox</code>) that integrates with TD Launcher Plus. Add it to your default startup file.</p>
-
-      <div class="platform-tags">
-        <span class="tag tag-mac">macOS — Required for Recents</span>
-        <span class="tag tag-win">Windows — Optional (Icons)</span>
-      </div>
-
-      <ul>
-        <li><strong>Auto-generate icons:</strong> Snapshots the <code>/perform</code> window on every save</li>
-        <li><strong>Manual icon creation:</strong> Create custom icons that take priority over auto snapshots</li>
-        <li><strong>Quick access:</strong> Open TD Launcher Plus from within TouchDesigner</li>
-      </ul>
-
-      <h3>Installation</h3>
-      <ol>
-        <li>Import <code>TDLauncherPlusUtility.tox</code> into your project</li>
-        <li>Or better: add it to your default startup .toe file so it's always present — it's lightweight and only does minor file operations on init and save</li>
-      </ol>
-    </section>
-
-    <!-- Installation -->
-    <section>
-      <h2>Installation</h2>
-
-      <h3>Windows</h3>
-      <ol>
-        <li>Download the installer from the <a href="https://github.com/function-store/TD-Launcher-Plus/releases/latest" target="_blank" rel="noopener">releases page</a></li>
-        <li>Run the installer</li>
-        <li>Set Windows to open <code>.toe</code> files with TD Launcher Plus by default</li>
-        <li>Double-clicking <code>.toe</code> files will now launch them with TD Launcher Plus</li>
-      </ol>
-
-      <h3>macOS</h3>
-      <ol>
-        <li>Download the <code>.dmg</code> file from the <a href="https://github.com/function-store/TD-Launcher-Plus/releases/latest" target="_blank" rel="noopener">releases page</a></li>
-        <li>Open the DMG and drag "TD Launcher Plus" to Applications</li>
-        <li><strong>Important:</strong> The app is not notarized — see the security note below</li>
-        <li>File association is automatic. Optionally set as default via right-click &rarr; Get Info &rarr; Open with</li>
-      </ol>
-
-      <div class="security-steps" id="macos-security">
-        <h3>macOS Security Note</h3>
-        <p>Because the app is open-source and not signed with an Apple Developer certificate, macOS Gatekeeper will show a warning.</p>
-        <ol>
-          <li>Double-click the app</li>
-          <li>When the warning appears, click <strong>Done</strong> (not "Move to Trash")</li>
-          <li>Open <strong>System Settings &rarr; Privacy &amp; Security</strong></li>
-          <li>Click <strong>Open Anyway</strong> next to the TD Launcher Plus message</li>
-          <li>You only need to do this once</li>
-        </ol>
-        <p>Alternative: <code>xattr -cr "/Applications/TD Launcher Plus.app"</code></p>
-        <img src="apple_security.png" alt="macOS Security settings showing Open Anyway button">
-      </div>
-    </section>
-
     <!-- Settings -->
     <section>
       <h2>Settings</h2>
       <ul>
-        <li><strong>Max Recent Files:</strong> Configure how many recent files to keep (5–200, default 33)</li>
+        <li><strong>Max Recent Files:</strong> Configure how many recent files to keep (5-200, default 33)</li>
         <li><strong>Clear Missing Files:</strong> Remove all entries whose files no longer exist — cleans Recent Files, Templates, and Windows Registry entries</li>
       </ul>
     </section>
