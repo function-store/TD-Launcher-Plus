@@ -2675,12 +2675,21 @@ class LauncherApp:
         app_label = 'TouchPlayer' if self.use_touchplayer else 'TouchDesigner'
         logger.info(f"Launching {'%s (default)' % app_label if is_default else file_path} with {version}")
 
+        # Ensure absolute path to avoid issues with working directory changes
+        if not is_default:
+            file_path = os.path.abspath(file_path)
+
         try:
             if platform.system() == 'Darwin':
                 if is_default:
                     subprocess.Popen(['open', '-a', app_path] if app_path else [executable])
                 elif app_path:
-                    subprocess.Popen(['open', '-a', app_path, file_path])
+                    # Use --args to pass file as a command-line argument to TD.
+                    # This is more reliable than Apple Event document opening,
+                    # which can silently fail and leave TD with a blank workspace.
+                    cmd = ['open', '-a', app_path, '--args', file_path]
+                    logger.info(f"Launch command: {cmd}")
+                    subprocess.Popen(cmd)
                 else:
                     subprocess.Popen([executable, file_path])
             else:
@@ -3674,7 +3683,7 @@ def main():
     if len(sys.argv) > 1:
         arg = sys.argv[1]
         if os.path.exists(arg) and arg.lower().endswith('.toe'):
-            toe_file = arg
+            toe_file = os.path.abspath(arg)
 
     # Create and run app
     app = LauncherApp(toe_file)

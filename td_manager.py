@@ -263,14 +263,16 @@ class TDManager:
             if os.path.exists(toeexpand_path):
                 return toeexpand_path
         else:
-            # On Mac, use toeexpand from the first available TD installation
+            # On Mac, use toeexpand from the newest installed TD version
+            # (older toeexpand may fail to read .toe files from newer TD versions)
             if self.versions:
-                first_app = list(self.versions.values())[0]
-                app_path = first_app.get('app_path')
-                if app_path:
-                    toeexpand_path = os.path.join(app_path, "Contents", "MacOS", "toeexpand")
-                    if os.path.exists(toeexpand_path):
-                        return toeexpand_path
+                sorted_keys = self.get_sorted_version_keys()
+                for key in reversed(sorted_keys):
+                    app_path = self.versions[key].get('app_path')
+                    if app_path:
+                        toeexpand_path = os.path.join(app_path, "Contents", "MacOS", "toeexpand")
+                        if os.path.exists(toeexpand_path):
+                            return toeexpand_path
         return None
 
     def inspect_toe_file(self, file_path: str) -> Optional[str]:
