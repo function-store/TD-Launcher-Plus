@@ -400,25 +400,42 @@ class Config:
             """Normalize path for comparison: absolute, normalized slashes, lowercase on Windows."""
             return os.path.normcase(os.path.normpath(os.path.abspath(p))) if p else ''
 
-        # TD recents go first (in native order: registry index / .sfl4 order).
-        # TD entries win dedup — if a file is in both lists, it keeps 'td' color.
-        for item in td_recents:
-            path = self._get_path_from_entry(item)
-            norm_path = normalize_path(path)
-            if path and norm_path not in seen_paths:
-                entry = item if isinstance(item, dict) else {'path': path, 'last_opened': 0}
-                entry['source'] = 'td'
-                merged_list.append(entry)
-                seen_paths.add(norm_path)
+        def _append_unique(items, source_tag=None):
+            """Add entries to merged_list, skipping duplicates."""
+            for item in items:
+                path = self._get_path_from_entry(item)
+                norm_path = normalize_path(path)
+                if path and norm_path not in seen_paths:
+                    entry = item if isinstance(item, dict) else {'path': path, 'last_opened': 0}
+                    if source_tag:
+                        entry['source'] = source_tag
+                    merged_list.append(entry)
+                    seen_paths.add(norm_path)
 
-        # Append launcher-only entries after TD recents
-        for item in launcher_recents:
-            path = self._get_path_from_entry(item)
-            norm_path = normalize_path(path)
-            if path and norm_path not in seen_paths:
-                entry = item if isinstance(item, dict) else {'path': path, 'last_opened': 0}
-                merged_list.append(entry)
-                seen_paths.add(norm_path)
+        if platform.system() == 'Darwin':
+            # On macOS, td_recents comes from the utility TOX (snapshot at sync time)
+            # and optionally from .sfl4 (if Full Disk Access is granted).
+            # Launcher entries opened after the last TOX sync should appear first,
+            # then native .sfl4 / TOX entries, then older launcher entries.
+            td_recents_ts = self._config.get('td_recents_timestamp', 0)
+
+            recent_launcher = []
+            older_launcher = []
+            for item in launcher_recents:
+                entry = item if isinstance(item, dict) else {'path': item, 'last_opened': 0}
+                if entry.get('last_opened', 0) > td_recents_ts:
+                    recent_launcher.append(entry)
+                else:
+                    older_launcher.append(entry)
+            recent_launcher.sort(key=lambda e: e.get('last_opened', 0), reverse=True)
+
+            _append_unique(recent_launcher)
+            _append_unique(td_recents, source_tag='td')
+            _append_unique(older_launcher)
+        else:
+            # On Windows, registry is always fresh — TD recents go first.
+            _append_unique(td_recents, source_tag='td')
+            _append_unique(launcher_recents)
 
         return merged_list
 
