@@ -32,7 +32,7 @@ from utils import (
 )
 
 # Version
-APP_VERSION = "2.1.2"
+APP_VERSION = "2.1.3"
 
 # Sentinel for the "Default" template entry (launch TD without a file)
 DEFAULT_TEMPLATE = "__default__"
