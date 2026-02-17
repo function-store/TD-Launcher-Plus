@@ -19,6 +19,7 @@ DEFAULT_CONFIG = {
     'confirm_remove_from_list': True,
     'show_icons': False,
     'show_readme': False,
+    'collapse_versions': False,
     'show_full_history': True,
     'has_prompted_file_assoc': False,
 }
@@ -553,6 +554,15 @@ class Config:
     @show_readme.setter
     def show_readme(self, value: bool) -> None:
         self._config['show_readme'] = value
+        self.save()
+
+    @property
+    def collapse_versions(self) -> bool:
+        return self._config.get('collapse_versions', False)
+
+    @collapse_versions.setter
+    def collapse_versions(self, value: bool) -> None:
+        self._config['collapse_versions'] = value
         self.save()
 
     @property

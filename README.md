@@ -99,6 +99,7 @@ A companion TouchDesigner component (`TDLauncherPlusUtility.tox`) is included th
 - **Up / Down** (while searching): Navigate the filtered list without leaving the search field
 
 **Interface Toggles**
+- **V**: Toggle **"Collapse Versions"** (group numbered auto-save files under one entry)
 - **C**: Toggle **"Show Icons"**
 - **E**: Toggle **"Show Info"** (README) panel
 - **R**: Toggle **"Use TouchPlayer"** (launch in TouchPlayer instead of TouchDesigner)
@@ -139,9 +140,11 @@ TD Launcher Plus keeps track of recently opened projects. Files are added to the
 
 **Full History:** Your launcher history is merged with TouchDesigner's native recent files list. Duplicate paths are automatically removed, with TD-sourced files taking priority. Path comparisons are case-insensitive and ignore slash direction differences.
 
-**Versioned files:** TouchDesigner auto-saves create versioned files like `project.7.toe`, `project.8.toe`, etc. TD Launcher Plus intelligently handles these:
-- Versioned files are displayed as their non-versioned counterpart (e.g., `project.7.toe` shows as `project.toe`)
+**Versioned files:** TouchDesigner auto-saves create versioned files like `project.7.toe`, `project.8.toe`, etc. By default these are shown as-is in the file list. Enable **"Collapse Versions"** (or press **V**) to group them:
+- Versioned files are displayed as their non-versioned counterpart (e.g., `project.7.toe` shows as `project.toe`) when the base file exists
 - Multiple versions of the same project appear only once in the list
+- Standalone versioned files (no base file on disk) are always shown
+- Files opened directly via double-click or drag-and-drop always appear with their original name
 - Files in a `Backup/` folder are shown with a `Backup/` prefix
 
 ### Templates

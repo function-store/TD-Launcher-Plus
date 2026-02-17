@@ -408,6 +408,7 @@ class LauncherApp:
         """Build the main UI."""
         show_icons = self.config.show_icons
         show_readme = self.config.show_readme
+        collapse_versions = self.config.collapse_versions
 
         # Create global click handler registry
         if dpg.does_item_exist("global_handler_registry"):
@@ -596,8 +597,15 @@ class LauncherApp:
                                 show=False,
                             )
                             dpg.add_button(label="Browse...", tag="browse_btn_recent", callback=self._on_browse)
+                            dpg.add_checkbox(label="Collapse Versions", tag="collapse_versions_checkbox", default_value=collapse_versions, callback=self._on_toggle_collapse_versions)
+                            with dpg.tooltip("collapse_versions_checkbox"):
+                                dpg.add_text("Group numbered auto-save files under one entry (V)")
                             dpg.add_checkbox(label="Show Icons", tag="show_icons_checkbox", default_value=show_icons, callback=self._on_toggle_icons)
+                            with dpg.tooltip("show_icons_checkbox"):
+                                dpg.add_text("Display project thumbnails next to each file (C)")
                             dpg.add_checkbox(label="Show Info", tag="show_readme_checkbox", default_value=show_readme, callback=self._on_toggle_readme)
+                            with dpg.tooltip("show_readme_checkbox"):
+                                dpg.add_text("Show project README panel (E)")
 
                         dpg.add_button(
                             label="Clear...",
@@ -673,7 +681,7 @@ class LauncherApp:
             # Backup for when file provided but config empty (rare)
             self._update_version_panel()
 
-    def _build_file_picker_section(self, show_icons: bool, show_readme: bool):
+    def _build_file_picker_section(self, show_icons: bool, show_readme: bool, collapse_versions: bool = False):
         """Build the file picker tabs section."""
         with dpg.tab_bar(tag="file_picker_tabs"):
             # Recent Files Tab
@@ -685,17 +693,29 @@ class LauncherApp:
                         callback=self._on_browse
                     )
                     dpg.add_checkbox(
+                        label="Collapse Versions",
+                        tag="collapse_versions_checkbox",
+                        default_value=collapse_versions,
+                        callback=self._on_toggle_collapse_versions
+                    )
+                    with dpg.tooltip("collapse_versions_checkbox"):
+                        dpg.add_text("Group numbered auto-save files under one entry (V)")
+                    dpg.add_checkbox(
                         label="Show Icons",
                         tag="show_icons_checkbox",
                         default_value=show_icons,
                         callback=self._on_toggle_icons
                     )
+                    with dpg.tooltip("show_icons_checkbox"):
+                        dpg.add_text("Display project thumbnails next to each file (C)")
                     dpg.add_checkbox(
                         label="Show Info",
                         tag="show_readme_checkbox",
                         default_value=show_readme,
                         callback=self._on_toggle_readme
                     )
+                    with dpg.tooltip("show_readme_checkbox"):
+                        dpg.add_text("Show project README panel (E)")
                 with dpg.child_window(height=240, width=-1, tag="recent_files_list", horizontal_scrollbar=True):
                     self._build_recent_files_list()
 
@@ -713,12 +733,16 @@ class LauncherApp:
                         default_value=show_icons,
                         callback=self._on_toggle_icons
                     )
+                    with dpg.tooltip("show_icons_checkbox_templates"):
+                        dpg.add_text("Display project thumbnails next to each file (C)")
                     dpg.add_checkbox(
                         label="Show Info",
                         tag="show_readme_checkbox_templates",
                         default_value=show_readme,
                         callback=self._on_toggle_readme
                     )
+                    with dpg.tooltip("show_readme_checkbox_templates"):
+                        dpg.add_text("Show project README panel (E)")
                 with dpg.child_window(height=240, width=-1, tag="templates_list", horizontal_scrollbar=True):
                     self._build_templates_list()
                 self._apply_template_theme()
@@ -830,6 +854,8 @@ class LauncherApp:
                 recent_files.insert(0, {'path': abs_active, 'source': 'launcher', 'last_opened': time.time()})
 
         show_icons = self.config.show_icons
+        collapse_versions = self.config.collapse_versions
+        abs_active = os.path.abspath(self.active_manual_file) if self.active_manual_file else ""
 
         if not recent_files:
             dpg.add_text(
@@ -849,15 +875,19 @@ class LauncherApp:
             file_path = file_path.strip() if file_path else ''
             filename = os.path.basename(file_path)
             parent_folder = os.path.basename(os.path.dirname(file_path))
-            
+
             d_name = filename
-            if self._is_versioned_toe(filename):
+            is_active = abs_active and os.path.abspath(file_path) == abs_active
+            if collapse_versions and not is_active and self._is_versioned_toe(filename):
                 if parent_folder.lower() == 'backup':
                     d_name = f"Backup/{filename}"
                 else:
                     base = filename[:-4]
                     base_no_version = base.rsplit('.', 1)[0]
-                    d_name = f"{base_no_version}.toe"
+                    non_versioned = f"{base_no_version}.toe"
+                    non_versioned_path = os.path.join(os.path.dirname(file_path), non_versioned)
+                    if os.path.exists(non_versioned_path):
+                        d_name = non_versioned
             max_chars = max(max_chars, len(d_name))
         
         # Pixels approx: width = chars * multiplier
@@ -873,17 +903,20 @@ class LauncherApp:
             parent_folder = os.path.basename(os.path.dirname(file_path))
 
             # Handle versioned files (e.g., project.7.toe)
-            if self._is_versioned_toe(filename):
+            is_active = abs_active and os.path.abspath(file_path) == abs_active
+            if collapse_versions and not is_active and self._is_versioned_toe(filename):
                 if parent_folder.lower() == 'backup':
                     # Show Backup files with prefix
                     display_name = f"Backup/{filename}"
                 else:
-                    # Convert to non-versioned path (project.7.toe -> project.toe)
+                    # Collapse to non-versioned path only if the base file exists
                     base = filename[:-4]  # Remove .toe
                     base_no_version = base.rsplit('.', 1)[0]
                     non_versioned_filename = f"{base_no_version}.toe"
-                    file_path = os.path.join(os.path.dirname(file_path), non_versioned_filename)
-                    filename = non_versioned_filename
+                    non_versioned_path = os.path.join(os.path.dirname(file_path), non_versioned_filename)
+                    if os.path.exists(non_versioned_path):
+                        file_path = non_versioned_path
+                        filename = non_versioned_filename
                     display_name = filename
             else:
                 display_name = filename
@@ -2211,6 +2244,13 @@ class LauncherApp:
             self._on_toggle_icons(None, new_state)
             return
 
+        # 3b. V Key - Toggle Collapse Versions
+        if key_code == getattr(dpg, 'mvKey_V', -1) and not modifier_held:
+            new_state = not self.config.collapse_versions
+            logger.debug(f"Shortcut: Toggling Collapse Versions to {new_state} via V")
+            self._on_toggle_collapse_versions(None, new_state)
+            return
+
         # 4. R Key - Toggle TouchPlayer
         if key_code == getattr(dpg, 'mvKey_R', -1) and not modifier_held:
             new_state = not self.use_touchplayer
@@ -2584,6 +2624,17 @@ class LauncherApp:
         self.use_touchplayer = app_data
         # Rebuild the entire version panel so the version list swaps
         self._rebuild_version_panel_ui()
+
+    def _on_toggle_collapse_versions(self, sender, app_data):
+        """Handle collapse versions toggle."""
+        self.config.collapse_versions = app_data
+
+        # Sync checkbox
+        if dpg.does_item_exist("collapse_versions_checkbox"):
+            dpg.set_value("collapse_versions_checkbox", app_data)
+
+        # Rebuild recent files list
+        self._build_recent_files_list()
 
     def _on_toggle_icons(self, sender, app_data):
         """Handle show icons toggle."""
