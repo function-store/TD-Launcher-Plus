@@ -32,7 +32,7 @@ from utils import (
 )
 
 # Version
-APP_VERSION = "2.1.3"
+APP_VERSION = "2.1.4"
 
 # Sentinel for the "Default" template entry (launch TD without a file)
 DEFAULT_TEMPLATE = "__default__"
@@ -1278,7 +1278,8 @@ class LauncherApp:
 
                     if not self.readme_editing_active:
                         vp_width = dpg.get_viewport_width()
-                        dynamic_width = max(30, int((vp_width - 630) / 9))
+                        #dynamic_width = max(30, int((vp_width - 630) / 9))
+                        dynamic_width = 72
                         gutter, display_content = self._wrap_content_with_gutter(active_text, width=dynamic_width)
                     else:
                         line_count = active_text.count('\n') + 1

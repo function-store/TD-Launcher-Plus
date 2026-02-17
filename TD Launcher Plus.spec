@@ -79,8 +79,8 @@ app = BUNDLE(
         ],
         'CFBundleDisplayName': 'TD Launcher Plus',
         'CFBundleGetInfoString': 'TD Launcher Plus - TouchDesigner Project Launcher',
-        'CFBundleShortVersionString': '2.1.3',
-        'CFBundleVersion': '2.1.3',
+        'CFBundleShortVersionString': '2.1.4',
+        'CFBundleVersion': '2.1.4',
         'NSHighResolutionCapable': True,
         'LSMinimumSystemVersion': '10.9.0'
     }
