@@ -2734,12 +2734,11 @@ class LauncherApp:
         try:
             if platform.system() == 'Darwin':
                 if is_default:
-                    subprocess.Popen(['open', '-a', app_path] if app_path else [executable])
+                    subprocess.Popen(['open', '-n', '-a', app_path] if app_path else [executable])
                 elif app_path:
-                    # Use --args to pass file as a command-line argument to TD.
-                    # This is more reliable than Apple Event document opening,
-                    # which can silently fail and leave TD with a blank workspace.
-                    cmd = ['open', '-a', app_path, '--args', file_path]
+                    # Use -n to allow multiple instances and --args to pass
+                    # the file as a command-line argument to TD.
+                    cmd = ['open', '-n', '-a', app_path, '--args', file_path]
                     logger.info(f"Launch command: {cmd}")
                     subprocess.Popen(cmd)
                 else:
