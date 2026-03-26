@@ -15,7 +15,7 @@ DEFAULT_CONFIG = {
     'version': 1,
     'recent_files': [],
     'templates': [],
-    'max_recent_files': 33,
+    'max_recent_files': 100,
     'confirm_remove_from_list': True,
     'show_icons': False,
     'show_readme': False,
@@ -286,7 +286,7 @@ class Config:
         recent_files.insert(0, entry)
 
         # Limit size
-        max_recent = self._config.get('max_recent_files', 33)
+        max_recent = self._config.get('max_recent_files', 100)
         self._config['launcher_recents'] = recent_files[:max_recent]
         self.save()
 

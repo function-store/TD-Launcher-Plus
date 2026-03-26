@@ -32,7 +32,7 @@ from utils import (
 )
 
 # Version
-APP_VERSION = "2.1.5"
+APP_VERSION = "2.1.6"
 
 # Sentinel for the "Default" template entry (launch TD without a file)
 DEFAULT_TEMPLATE = "__default__"
@@ -282,6 +282,7 @@ class LauncherApp:
         while dpg.is_dearpygui_running():
             self._update_countdown()
             self._check_install_complete()
+            self._poll_search_input()
             dpg.render_dearpygui_frame()
 
         dpg.destroy_context()
@@ -2077,6 +2078,15 @@ class LauncherApp:
         if dpg.does_item_exist("file_picker_tabs"):
             dpg.focus_item("file_picker_tabs")
 
+    def _poll_search_input(self):
+        """Fallback for macOS: poll search input value in case DPG callback doesn't fire."""
+        if not self.search_input_active or not dpg.does_item_exist("search_filter_input"):
+            return
+        current_val = dpg.get_value("search_filter_input")
+        new_filter = current_val.strip().lower() if current_val else ""
+        if new_filter != self.search_filter:
+            self._on_search_filter_changed(None, current_val)
+
     def _on_clear_recents(self, sender, app_data):
         """Handle clear history button click."""
         if show_clear_confirmation():
@@ -2182,19 +2192,23 @@ class LauncherApp:
             # Block all other keys so they go to the text input
             return
 
-        # Skip navigation shortcuts if README is focused AND in editing mode
+        # Skip navigation shortcuts if README is in editing mode
         is_readme_focused = dpg.is_item_focused("readme_content_text") if dpg.does_item_exist("readme_content_text") else False
-        
+
         # Tab Focus Steering: If we land in README via Tab but NOT in editing mode, bounce out
         if key_code == getattr(dpg, 'mvKey_Tab', -1) and is_readme_focused and not self.readme_editing_active:
             if dpg.does_item_exist("file_picker_tabs"):
                 dpg.focus_item("file_picker_tabs")
             return
 
-        if key_code != getattr(dpg, 'mvKey_Tab', -1):
-            # Only block if we are EXPLICITLY in editing mode
-            if is_readme_focused and self.readme_editing_active:
+        # Block all keys while in editing mode so hotkeys don't fire while typing
+        if self.readme_editing_active:
+            # Allow Escape to exit editing mode
+            if key_code == getattr(dpg, 'mvKey_Escape', -1):
+                self.readme_editing_active = False
+                self._rebuild_readme_ui_internal()
                 return
+            return
 
         # 2. E Key - Toggle/Edit README
         if key_code == getattr(dpg, 'mvKey_E', -1) and modifier_held:
