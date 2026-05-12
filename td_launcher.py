@@ -13,6 +13,7 @@ import webbrowser
 import ctypes
 from typing import Optional
 from urllib.request import urlretrieve
+from pathlib import Path
 
 import dearpygui.dearpygui as dpg
 
@@ -2792,6 +2793,7 @@ class LauncherApp:
                  user_data={'version': version, 'promote': promote},
                  callback=self._on_select_template_destination,
                  id="template_destination_dialog",
+                 default_path= Path.home(),
                  height=400,
                  width=600
              ) : dpg.add_file_extension(".*")
