@@ -2,6 +2,7 @@
 """TD Launcher Plus - TouchDesigner project launcher with version management."""
 
 import os
+import shutil
 import sys
 import time
 import platform
@@ -2782,7 +2783,38 @@ class LauncherApp:
 
         # Get selected version
         version = dpg.get_value(self._td_version_id) if self._td_version_id and dpg.does_item_exist(self._td_version_id) else self.build_info
-        self._launch_project(self.selected_file, version, promote=promote)
+
+        # If project is from template List, prompt a directory destination before launch
+        if sender and "template_" in sender and sender != "template_0" :
+             with dpg.file_dialog(
+                 directory_selector=True,
+                 show=True,
+                 user_data={'version': version, 'promote': promote},
+                 callback=self._on_select_template_destination,
+                 id="template_destination_dialog",
+                 height=400,
+                 width=600
+             ) : dpg.add_file_extension(".*")
+
+        else:
+            self._launch_project(self.selected_file, version, promote=promote)
+
+    def _on_select_template_destination(self, sender, app_data, user_data):
+        """Handle template destination selection."""
+        dest = app_data['file_path_name'] if isinstance(app_data, dict) else None
+        if not dest:
+            return
+        # Create a copy of the template in the destination folder and launch it
+        try:
+            shutil.copytree(os.path.dirname(self.selected_file), dest, dirs_exist_ok=True)
+            logger.info(f"Copied template to {dest}")
+            template_name = os.path.basename(self.selected_file)
+            dest_path = os.path.join(dest, template_name)
+            new_name_path = os.path.join(dest, "NewProject.toe")
+            os.rename(dest_path, new_name_path)
+            self._launch_project(new_name_path, user_data['version'], promote=user_data['promote'])
+        except Exception as e:
+            logger.error(f"Failed to copy template: {e}")
 
     def _on_download(self, sender, app_data):
         """Handle download button click."""
