@@ -1,6 +1,21 @@
 # TD Launcher Plus
 A focused project dashboard for TouchDesigner. Launch .toe files with the correct version automatically, open recent project files, or custom template projects (startup files). With optional icon preview, and project documentation viewer and editor.
 
+> [!IMPORTANT]
+> **TD Launcher Plus has a successor: [TDX Launcher Ultra](https://launcher.functionstore.tools).** Still free, no account, just much more:
+> running sessions at a glance (focus, save, relaunch, kill, and a warning when one freezes), every version of a project in one drawer,
+> a Quick Launch search over everything from anywhere, the FNSTools catalog and installer, components from the Patreon creators you
+> support as a palette, Git and backup panels, a crash watchdog, and control of your sessions from your phone.
+> Windows and macOS (signed and notarized).
+>
+> [Website](https://launcher.functionstore.tools) · [Docs](https://launcher.functionstore.tools/docs/) · [Try it in the browser](https://launcher.functionstore.tools/demo/) · [Report an issue](https://github.com/function-store/TDX-Launcher-Ultra/issues)
+
+<p align="center">
+  <a href="https://launcher.functionstore.tools/#download">
+    <img src="https://raw.githubusercontent.com/function-store/TDX-Launcher-Ultra/main/assets/download-button.svg" width="440" alt="Download TDX Launcher Ultra">
+  </a>
+</p>
+
 This repo is based on [TD Launcher by EnviralDesign](https://github.com/enviraldesign/TD-Launcher) (MIT License).
 
 [![Download Latest Release](https://img.shields.io/github/v/release/function-store/TD-Launcher-Plus?style=for-the-badge&label=Download%20Latest&color=brightgreen)](https://github.com/function-store/TD-Launcher-Plus/releases/latest)
